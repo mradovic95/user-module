@@ -1,0 +1,77 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0_create-user-table-sequence
+      author: mradovic01011111@gmail.com
+      changes:
+        - createSequence:
+            sequenceName: user_id_seq
+  - changeSet:
+      id: 0_create-user-table
+      author: mradovic01011111@gmail.com
+      changes:
+        - createTable:
+            tableName: user_table
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: username
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: password
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: email
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: roles
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: verification_code
+                  type: varchar
+                  constraints:
+                    nullable: false
+  - changeSet:
+      id: 0_create-username-idx
+      author: mradovic01011111@gmail.com
+      changes:
+        - createIndex:
+            tableName: user_table
+            indexName: user_table_username_idx
+            unique: true
+            columns:
+              - column:
+                  name: username
+  - changeSet:
+      id: 0_create-email-idx
+      author: mradovic01011111@gmail.com
+      changes:
+        - createIndex:
+            tableName: user_table
+            indexName: user_table_email_idx
+            unique: true
+            columns:
+              - column:
+                  name: email

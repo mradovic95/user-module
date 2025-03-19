@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: 0_create-user-table.yml
+      relativeToChangelogFile: true
+  - include:
+      file: 1_create-role-and-permission-tables.yml
+      relativeToChangelogFile: true

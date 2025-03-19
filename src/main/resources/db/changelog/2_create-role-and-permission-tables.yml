@@ -1,0 +1,131 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1_create-role-table-sequence
+      author: mradovic01011111@gmail.com
+      changes:
+        - createSequence:
+            sequenceName: role_id_seq
+  - changeSet:
+      id: 1_create-role-table
+      author: mradovic01011111@gmail.com
+      changes:
+        - createTable:
+            tableName: role
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar
+                  constraints:
+                    nullable: false
+                    unique: true
+  - changeSet:
+      id: 1_create-permission-table-sequence
+      author: mradovic01011111@gmail.com
+      changes:
+        - createSequence:
+            sequenceName: permission_id_seq
+  - changeSet:
+      id: 1_create-permission-table
+      author: mradovic01011111@gmail.com
+      changes:
+        - createTable:
+            tableName: permission
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar
+                  constraints:
+                    nullable: false
+                    unique: true
+  - changeSet:
+      id: 1_roles_permissions-table
+      author: mradovic01011111@gmail.com
+      changes:
+        - createTable:
+            tableName: roles_permissions
+            columns:
+              - column:
+                  name: role_id
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: permission_id
+                  type: int
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            constraintName: pk_roles_permissions
+            tableName: roles_permissions
+            columnNames: "role_id, permission_id"
+        - addForeignKeyConstraint:
+            constraintName: fk_roles_permissions_role
+            baseTableName: roles_permissions
+            baseColumnNames: role_id
+            referencedTableName: role
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_roles_permissions_permission
+            baseTableName: roles_permissions
+            baseColumnNames: permission_id
+            referencedTableName: permission
+            referencedColumnNames: id
+            onDelete: CASCADE
+  - changeSet:
+      id: 1_users_roles-table
+      author: mradovic01011111@gmail.com
+      changes:
+        - createTable:
+            tableName: users_roles
+            columns:
+              - column:
+                  name: user_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            constraintName: pk_users_roles
+            tableName: users_roles
+            columnNames: "user_id, role_id"
+        - addForeignKeyConstraint:
+            constraintName: fk_users_roles_user
+            baseTableName: users_roles
+            baseColumnNames: user_id
+            referencedTableName: user_table
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_users_roles_role
+            baseTableName: users_roles
+            baseColumnNames: role_id
+            referencedTableName: role
+            referencedColumnNames: id
+            onDelete: CASCADE

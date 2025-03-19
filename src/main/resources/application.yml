@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: user-module
+  datasource:
+    url: jdbc:postgresql://localhost:5432/PoiCore
+    username: PoiCore
+    password: PoiCorePassword
+  liquibase:
+    change-log: classpath:db/changelog/master.yml
+    enabled: true
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    aws:
+      region:
+        static: 'us-east-1'
+      credentials:
+        access-key: 'AKIA5O2ROCODX7NTRAVA'
+        secret-key: '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'
+mail:
+  from: 'mihailo.radovic.poi@gmail.com'
+verification-url: "http://localhost:8080/user/verify"
