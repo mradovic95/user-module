@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>com.poi</groupId>
 	<artifactId>user-module</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>0.0.2-SNAPSHOT</version>
 	<name>user-module</name>
 	<description>user-module</description>
 	<url/>
