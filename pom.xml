@@ -38,6 +38,17 @@
 		<com.vladmihalcea.hibernate-types-60.version>2.21.1</com.vladmihalcea.hibernate-types-60.version>
 	</properties>
 
+	<distributionManagement>
+		<repository>
+			<id>user-module</id>
+			<url>https://com-comex-925199373191.d.codeartifact.us-east-2.amazonaws.com/maven/user-module/</url>
+		</repository>
+		<snapshotRepository>
+			<id>user-module</id>
+			<url>https://com-comex-925199373191.d.codeartifact.us-east-2.amazonaws.com/maven/user-module/</url>
+		</snapshotRepository>
+	</distributionManagement>
+
 	<dependencies>
 		<!-- Web -->
 		<dependency>

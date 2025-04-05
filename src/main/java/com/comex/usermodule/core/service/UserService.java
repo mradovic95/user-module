@@ -1,10 +1,7 @@
 package com.comex.usermodule.core.service;
 
-import java.time.Instant;
-
 import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.dto.CreateUserDto;
-import com.comex.usermodule.core.event.UserCreatedEvent;
 import com.comex.usermodule.core.mapper.UserMapper;
 import com.comex.usermodule.core.port.EventPublisher;
 import com.comex.usermodule.core.port.UserRepository;

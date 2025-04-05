@@ -6,7 +6,7 @@ spring:
     username: PoiCore
     password: PoiCorePassword
   liquibase:
-    change-log: classpath:db/changelog/master.yml
+    change-log: classpath:db/changelog/user-master.yml
     enabled: true
   threads:
     virtual:
