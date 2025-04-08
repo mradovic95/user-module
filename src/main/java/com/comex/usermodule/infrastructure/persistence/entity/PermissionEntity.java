@@ -1,4 +1,4 @@
-package com.comex.usermodule.infrastructure.entity;
+package com.comex.usermodule.infrastructure.persistence.entity;
 
 import java.time.Instant;
 

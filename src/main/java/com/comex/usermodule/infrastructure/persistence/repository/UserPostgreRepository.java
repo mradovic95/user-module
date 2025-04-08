@@ -1,4 +1,4 @@
-package com.comex.usermodule.infrastructure.repository;
+package com.comex.usermodule.infrastructure.persistence.repository;
 
 import static com.comex.usermodule.core.exception.UserExceptionKey.NOT_FOUND;
 
@@ -12,18 +12,17 @@ import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.domain.UserStatus;
 import com.comex.usermodule.core.exception.UserException;
 import com.comex.usermodule.core.port.UserRepository;
-import com.comex.usermodule.infrastructure.entity.RoleEntity;
-import com.comex.usermodule.infrastructure.entity.UserEntity;
-import com.comex.usermodule.infrastructure.jpa.RolePostgreJpaRepository;
-import com.comex.usermodule.infrastructure.jpa.UserPostgreJpaRepository;
-import com.comex.usermodule.infrastructure.mapper.UserEntityMapper;
+import com.comex.usermodule.infrastructure.persistence.entity.RoleEntity;
+import com.comex.usermodule.infrastructure.persistence.entity.UserEntity;
+import com.comex.usermodule.infrastructure.persistence.jpa.RolePostgreJpaRepository;
+import com.comex.usermodule.infrastructure.persistence.jpa.UserPostgreJpaRepository;
+import com.comex.usermodule.infrastructure.persistence.mapper.UserEntityMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RequiredArgsConstructor
-@Component
 public class UserPostgreRepository implements UserRepository {
 
 	private final UserPostgreJpaRepository jpaRepository;

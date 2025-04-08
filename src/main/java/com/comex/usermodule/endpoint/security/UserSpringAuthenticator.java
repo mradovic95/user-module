@@ -13,7 +13,6 @@ import com.comex.usermodule.core.service.JwtService;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
-@Component
 public class UserSpringAuthenticator implements UserAuthenticator {
 
 	private final AuthenticationManager authenticationManager;

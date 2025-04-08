@@ -1,4 +1,4 @@
-package com.comex.usermodule.infrastructure.mapper;
+package com.comex.usermodule.infrastructure.persistence.mapper;
 
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -8,11 +8,10 @@ import org.springframework.stereotype.Component;
 import com.comex.usermodule.core.domain.Role;
 import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.domain.UserStatus;
-import com.comex.usermodule.infrastructure.entity.PermissionEntity;
-import com.comex.usermodule.infrastructure.entity.RoleEntity;
-import com.comex.usermodule.infrastructure.entity.UserEntity;
+import com.comex.usermodule.infrastructure.persistence.entity.PermissionEntity;
+import com.comex.usermodule.infrastructure.persistence.entity.RoleEntity;
+import com.comex.usermodule.infrastructure.persistence.entity.UserEntity;
 
-@Component
 public class UserEntityMapper {
 
 	public UserEntity toUserEntity(User user, Set<RoleEntity> roles) {

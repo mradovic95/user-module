@@ -1,10 +1,10 @@
-package com.comex.usermodule.infrastructure.jpa;
+package com.comex.usermodule.infrastructure.persistence.jpa;
 
 import java.util.Set;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.comex.usermodule.infrastructure.entity.RoleEntity;
+import com.comex.usermodule.infrastructure.persistence.entity.RoleEntity;
 
 
 public interface RolePostgreJpaRepository extends JpaRepository<RoleEntity, Long> {
