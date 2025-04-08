@@ -8,7 +8,7 @@
 		<version>3.4.3</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>com.poi</groupId>
+	<groupId>com.comex</groupId>
 	<artifactId>user-module</artifactId>
 	<version>0.0.3-SNAPSHOT</version>
 	<name>user-module</name>
