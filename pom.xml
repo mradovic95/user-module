@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>com.comex</groupId>
 	<artifactId>user-module</artifactId>
-	<version>0.0.3-SNAPSHOT</version>
+	<version>0.0.4-SNAPSHOT</version>
 	<name>user-module</name>
 	<description>user-module</description>
 	<url/>
