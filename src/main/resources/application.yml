@@ -18,6 +18,5 @@ spring:
       credentials:
 #        access-key: 'AKIA5O2ROCODX7NTRAVA'
 #        secret-key: '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'
-mail:
-  from: 'mihailo.radovic.poi@gmail.com'
-verification-url: "http://localhost:8080/user/verify"
+verification:
+  required: false

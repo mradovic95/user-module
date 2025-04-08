@@ -17,8 +17,10 @@ import com.comex.usermodule.endpoint.model.CreateUserRequest;
 import com.comex.usermodule.endpoint.model.LoginTokenResponse;
 import com.comex.usermodule.endpoint.model.LoginUserRequest;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 
+@SecurityRequirement(name = "BearerAuth")
 @RequiredArgsConstructor
 @RequestMapping("/user")
 @RestController

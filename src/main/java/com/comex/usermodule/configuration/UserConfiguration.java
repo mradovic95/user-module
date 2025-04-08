@@ -53,7 +53,7 @@ public class UserConfiguration {
 	public UserService userService(UserRepository userRepository, EventPublisher eventPublisher,
 		UserMapper userMapper) {
 
-		return new UserService(userRepository, eventPublisher, userMapper);
+		return new UserService(false, userRepository, eventPublisher, userMapper);
 	}
 
 

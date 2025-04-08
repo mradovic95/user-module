@@ -13,13 +13,14 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UserService {
 
+	private final Boolean verificationRequired;
 	private final UserRepository userRepository;
 	private final EventPublisher eventPublisher;
 	private final UserMapper userMapper;
 
 	public void createUser(CreateUserDto createUserDto) {
 		log.info("Saving user: {}.", createUserDto);
-		User user = userRepository.save(userMapper.toUser(createUserDto));
+		User user = userRepository.save(userMapper.toUser(createUserDto, verificationRequired));
 		// publish event
 		eventPublisher.publish(userMapper.toUserCreatedEvent(user));
 	}

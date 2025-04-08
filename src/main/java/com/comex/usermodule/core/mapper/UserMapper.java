@@ -1,5 +1,6 @@
 package com.comex.usermodule.core.mapper;
 
+import static com.comex.usermodule.core.domain.UserStatus.CREATED;
 import static com.comex.usermodule.core.domain.UserStatus.VERIFIED;
 
 import java.time.Instant;
@@ -21,14 +22,14 @@ public class UserMapper {
 
 	private final PasswordEncoder passwordEncoder;
 
-	public User toUser(CreateUserDto registerUserDto) {
+	public User toUser(CreateUserDto registerUserDto, boolean verificationRequired) {
 		return User.builder()
 			.username(registerUserDto.username())
 			.password(passwordEncoder.encode(registerUserDto.password()))
 			.email(registerUserDto.email())
 			.createdAt(Instant.now())
 			.roles(Collections.singleton(new Role("ROLE_USER")))
-			.status(VERIFIED)
+			.status(verificationRequired ? CREATED : VERIFIED)
 			.verificationCode(UUID.randomUUID().toString())
 			.build();
 	}

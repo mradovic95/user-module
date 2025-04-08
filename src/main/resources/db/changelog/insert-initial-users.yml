@@ -1,7 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id:
-      author: your-name
+      author: mradovic01011111@gmail.com
       changes:
         - sqlFile:
             path: insert-initial-users.sql

@@ -5,3 +5,10 @@ databaseChangeLog:
   - include:
       file: 1_create-role-and-permission-tables.yml
       relativeToChangelogFile: true
+  - include:
+      file: insert-initial-roles.yml
+      relativeToChangelogFile: true
+  - include:
+      file: insert-initial-users.yml
+      relativeToChangelogFile: true
+
