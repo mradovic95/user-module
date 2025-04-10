@@ -1,5 +1,6 @@
 package com.comex.usermodule.configuration;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -19,8 +20,8 @@ import com.comex.usermodule.endpoint.security.jwt.JwtAuthFilter;
 @AutoConfiguration
 public class SecurityConfiguration {
 
-	private final String jwtSecretKey = "sadasdasdasdaksdlaksdlsadaslfjaslasdasdasdsdsadsadaksdasdlasdalsdkslakdlsakdlaskdslakdlakdlakd";
-	private final Long jwtExpiration = 3600L * 1000L;
+	@Autowired
+	private UserProperties userProperties;
 
 	@ConditionalOnMissingBean
 	@Bean
@@ -38,7 +39,7 @@ public class SecurityConfiguration {
 	@ConditionalOnMissingBean
 	@Bean
 	public JwtService jwtService() {
-		return new JwtService(jwtSecretKey, jwtExpiration);
+		return new JwtService(userProperties.getJwt().getJwtSecretKey(), userProperties.getJwt().getJwtExpiration());
 	}
 
 	@ConditionalOnMissingBean

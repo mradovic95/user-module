@@ -1,5 +1,6 @@
 package com.comex.usermodule.configuration;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
@@ -29,6 +30,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class UserConfiguration {
 
+	@Autowired
+	private UserProperties userProperties;
+
 	@ConditionalOnMissingBean
 	@Bean
 	public UserMapper userMapper(PasswordEncoder passwordEncoder) {
@@ -53,7 +57,7 @@ public class UserConfiguration {
 	public UserService userService(UserRepository userRepository, EventPublisher eventPublisher,
 		UserMapper userMapper) {
 
-		return new UserService(false, userRepository, eventPublisher, userMapper);
+		return new UserService(userProperties.isVerificationRequired(), userRepository, eventPublisher, userMapper);
 	}
 
 
