@@ -15,7 +15,7 @@ public class UserProperties {
 	@Data
 	public static class JwtProperties {
 
-		private String jwtSecretKey = "simpleSecretKey";
+		private String jwtSecretKey = "simpleSecretKeyasdadadadadadadadasdadasdasdasd";
 		private Long jwtExpiration = 3600L * 1000L;
 	}
 }

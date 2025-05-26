@@ -1,5 +1,7 @@
 package com.comex.usermodule.core.service;
 
+import java.util.Optional;
+
 import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.dto.CreateUserDto;
 import com.comex.usermodule.core.mapper.UserMapper;
@@ -18,14 +20,19 @@ public class UserService {
 	private final EventPublisher eventPublisher;
 	private final UserMapper userMapper;
 
-	public void createUser(CreateUserDto createUserDto) {
+	public User createUser(CreateUserDto createUserDto) {
 		log.info("Saving user: {}.", createUserDto);
 		User user = userRepository.save(userMapper.toUser(createUserDto, verificationRequired));
 		// publish event
 		eventPublisher.publish(userMapper.toUserCreatedEvent(user));
+		return user;
 	}
 
 	public User findByEmail(String email) {
 		return userRepository.findByEmail(email);
+	}
+
+	public Optional<User> findByEmailOptional(String email) {
+		return userRepository.findByEmailOptional(email);
 	}
 }

@@ -3,12 +3,11 @@ package com.comex.usermodule.endpoint.security;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.stereotype.Component;
 
 import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.port.UserAuthenticator;
-import com.comex.usermodule.endpoint.model.LoginUserRequest;
 import com.comex.usermodule.core.service.JwtService;
+import com.comex.usermodule.endpoint.model.LoginUserRequest;
 
 import lombok.RequiredArgsConstructor;
 

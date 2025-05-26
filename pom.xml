@@ -81,6 +81,10 @@
 			<artifactId>jjwt-jackson</artifactId>
 			<version>${io.jsonwebtoken.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-client</artifactId>
+		</dependency>
 		<!-- Email -->
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>

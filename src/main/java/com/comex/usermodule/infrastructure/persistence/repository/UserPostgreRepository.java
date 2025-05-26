@@ -2,6 +2,7 @@ package com.comex.usermodule.infrastructure.persistence.repository;
 
 import static com.comex.usermodule.core.exception.UserExceptionKey.NOT_FOUND;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -49,6 +50,13 @@ public class UserPostgreRepository implements UserRepository {
 			.map(userEntityMapper::toUser)
 			.orElseThrow(() -> new UserException(NOT_FOUND,
 				String.format("Verified user with email: %s not found.", email)));
+	}
+
+	@Override
+	public Optional<User> findByEmailOptional(String email) {
+		log.debug("Finding verified user by email: {}.", email);
+		return jpaRepository.findByEmailAndStatus(email, UserStatus.VERIFIED.name())
+			.map(userEntityMapper::toUser);
 	}
 
 	@Override
