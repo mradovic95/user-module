@@ -44,8 +44,6 @@ databaseChangeLog:
               - column:
                   name: verification_code
                   type: varchar
-                  constraints:
-                    nullable: false
   - changeSet:
       id: 0_create-username-idx
       author: mradovic01011111@gmail.com

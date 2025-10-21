@@ -1,4 +1,4 @@
-package com.comex.usermodule.infrastructure.persistence.entity;
+package com.comex.usermodule.infrastructure.persistence.postgre.entity;
 
 import java.time.Instant;
 import java.util.Set;
@@ -44,7 +44,7 @@ public class UserEntity {
 	private Instant createdAt;
 	@Column(nullable = false)
 	private String status;
-	@Column(name = "verification_code", nullable = false)
+	@Column(name = "verification_code")
 	private String verificationCode;
 	@JoinTable(
 		name = "users_roles",

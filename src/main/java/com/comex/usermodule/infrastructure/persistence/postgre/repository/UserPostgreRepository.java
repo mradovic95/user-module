@@ -1,4 +1,4 @@
-package com.comex.usermodule.infrastructure.persistence.repository;
+package com.comex.usermodule.infrastructure.persistence.postgre.repository;
 
 import static com.comex.usermodule.core.exception.UserExceptionKey.NOT_FOUND;
 
@@ -6,18 +6,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.springframework.stereotype.Component;
-
 import com.comex.usermodule.core.domain.Role;
 import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.domain.UserStatus;
 import com.comex.usermodule.core.exception.UserException;
 import com.comex.usermodule.core.port.UserRepository;
-import com.comex.usermodule.infrastructure.persistence.entity.RoleEntity;
-import com.comex.usermodule.infrastructure.persistence.entity.UserEntity;
-import com.comex.usermodule.infrastructure.persistence.jpa.RolePostgreJpaRepository;
-import com.comex.usermodule.infrastructure.persistence.jpa.UserPostgreJpaRepository;
-import com.comex.usermodule.infrastructure.persistence.mapper.UserEntityMapper;
+import com.comex.usermodule.infrastructure.persistence.postgre.entity.RoleEntity;
+import com.comex.usermodule.infrastructure.persistence.postgre.entity.UserEntity;
+import com.comex.usermodule.infrastructure.persistence.postgre.jpa.RolePostgreJpaRepository;
+import com.comex.usermodule.infrastructure.persistence.postgre.jpa.UserPostgreJpaRepository;
+import com.comex.usermodule.infrastructure.persistence.postgre.mapper.UserEntityMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

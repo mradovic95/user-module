@@ -38,7 +38,7 @@ public class UserController {
 	}
 
 	@PostMapping("/login")
-	public ResponseEntity<LoginTokenResponse> login(LoginUserRequest loginUserRequest) {
+	public ResponseEntity<LoginTokenResponse> login(@RequestBody LoginUserRequest loginUserRequest) {
 
 		return ResponseEntity.ok(new LoginTokenResponse(userAuthenticationService.login(loginUserRequest)));
 	}

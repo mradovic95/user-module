@@ -1,0 +1,22 @@
+spring:
+  liquibase:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+
+verification:
+  required: false
+
+user:
+  verification-required: false
+  jwt:
+    jwt-secret-key: "dGVzdC1zZWNyZXQta2V5LWZvci1pbnRlZ3JhdGlvbi10ZXN0cy0xMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODk="
+    jwt-expiration: 3600000
+
+logging:
+  level:
+    com.comex.usermodule: DEBUG
+    org.testcontainers: INFO
+    org.springframework.test: INFO

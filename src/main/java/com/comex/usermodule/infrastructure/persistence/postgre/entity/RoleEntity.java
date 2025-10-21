@@ -1,4 +1,4 @@
-package com.comex.usermodule.infrastructure.persistence.entity;
+package com.comex.usermodule.infrastructure.persistence.postgre.entity;
 
 import java.time.Instant;
 import java.util.Set;

@@ -1,4 +1,4 @@
-package com.comex.usermodule.infrastructure.persistence.jpa;
+package com.comex.usermodule.infrastructure.persistence.postgre.jpa;
 
 
 import java.util.Optional;
@@ -6,7 +6,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.comex.usermodule.infrastructure.persistence.entity.UserEntity;
+import com.comex.usermodule.infrastructure.persistence.postgre.entity.UserEntity;
 
 public interface UserPostgreJpaRepository extends JpaRepository<UserEntity, Long> {
 
