@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+		 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.comex</groupId>
+		<artifactId>user-module</artifactId>
+		<version>0.0.6-SNAPSHOT</version>
+	</parent>
+
+	<artifactId>user-module-starter-dynamodb</artifactId>
+	<name>user-module-starter</name>
+	<description>All-in-one starter with both PostgreSQL and DynamoDB support</description>
+
+	<dependencies>
+		<!-- Core module -->
+		<dependency>
+			<groupId>com.comex</groupId>
+			<artifactId>user-module-configuration</artifactId>
+		</dependency>
+		<!-- Lombok -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.comex</groupId>
+			<artifactId>user-module-infrastructure-dynamodb</artifactId>
+		</dependency>
+	</dependencies>
+
+</project>

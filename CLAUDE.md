@@ -11,6 +11,11 @@ role-based access control.
 **Build Tool**: Maven
 **Package**: com.comex.usermodule
 
+## Development Environment
+
+**Java:** This project uses **Java 21** managed via SDKMAN. Before running Maven commands, set:
+`export JAVA_HOME=/Users/mihailoradovic/.sdkman/candidates/java/current`
+
 ## Technology Stack
 
 ### Core Framework
