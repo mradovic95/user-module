@@ -6,9 +6,9 @@
 integrated into larger applications. It provides JWT-based authentication, OAuth2 (Google) login, user verification, and
 role-based access control.
 
-**Type**: Reusable Spring Boot Auto-Configuration Library
+**Type**: Multi-Module Maven Project - Reusable Spring Boot Auto-Configuration Library
 **Java Version**: 21
-**Build Tool**: Maven
+**Build Tool**: Maven (Multi-Module)
 **Package**: com.comex.usermodule
 
 ## Development Environment
@@ -56,63 +56,159 @@ role-based access control.
 - **Lombok 1.18.32** - Boilerplate code reduction
 - **Resilience4j 2.3.0** - Retry mechanisms
 
+## Project Structure - Multi-Module Maven
+
+The user-module is organized as a **multi-module Maven project** with 7 distinct modules, each serving a specific purpose:
+
+```
+user-module (parent pom)
+├── user-module-core                      # Domain models, services, ports
+├── user-module-infrastructure-postgre    # PostgreSQL persistence adapter
+├── user-module-infrastructure-dynamodb   # DynamoDB persistence adapter
+├── user-module-endpoint                  # REST controllers and web models
+├── user-module-configuration             # Auto-configuration and security
+├── user-module-starter-postgre           # PostgreSQL starter dependency
+└── user-module-starter-dynamodb          # DynamoDB starter dependency
+```
+
+### Module Descriptions
+
+| Module | Description | Key Components | Depends On |
+|--------|-------------|----------------|------------|
+| **user-module-core** | Domain models, business logic, port interfaces | User, Role, UserService, UserRepository (interface) | None |
+| **user-module-infrastructure-postgre** | PostgreSQL persistence implementation | UserPostgreRepository, UserEntity, Liquibase migrations | user-module-core |
+| **user-module-infrastructure-dynamodb** | DynamoDB persistence implementation | UserDynamoRepository, UserDynamoEntity | user-module-core |
+| **user-module-endpoint** | REST API endpoints and web models | UserController, CreateUserRequest, UserResponse | user-module-core |
+| **user-module-configuration** | Auto-configuration, security, bean wiring | SecurityConfiguration, JwtAuthFilter, UserProperties | user-module-core |
+| **user-module-starter-postgre** | All-in-one PostgreSQL starter | Auto-configuration imports | configuration, infrastructure-postgre |
+| **user-module-starter-dynamodb** | All-in-one DynamoDB starter | Auto-configuration imports | configuration, infrastructure-dynamodb |
+
+### Module Dependencies
+
+```
+user-module-starter-postgre
+  ├── user-module-configuration
+  │     └── user-module-core
+  ├── user-module-infrastructure-postgre
+  │     └── user-module-core
+  └── user-module-endpoint (transitive)
+        └── user-module-core
+
+user-module-starter-dynamodb
+  ├── user-module-configuration
+  │     └── user-module-core
+  ├── user-module-infrastructure-dynamodb
+  │     └── user-module-core
+  └── user-module-endpoint (transitive)
+        └── user-module-core
+```
+
 ## Architecture & Design Patterns
 
 ### Hexagonal Architecture (Ports & Adapters)
 
-The project follows **Hexagonal Architecture** principles with clear separation of concerns:
+The project follows **Hexagonal Architecture** principles with clear separation of concerns across modules:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Endpoint Layer                        │
-│  (Controllers, Security, Web Models, Mappers)               │
-│  - UserController                                            │
-│  - JwtAuthFilter, OAuth2LoginSuccessHandler                 │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────┐
-│                         Core Layer                           │
-│  (Domain, Services, Ports, Events)                          │
-│  - User, Role (Domain Models)                               │
-│  - UserService, UserAuthenticationService                   │
-│  - UserRepository, EventPublisher (Ports/Interfaces)        │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────┐
-│                    Infrastructure Layer                      │
-│  (Persistence, Messaging, External Integrations)            │
-│  - postgre/: UserPostgreRepository, UserEntity (PostgreSQL) │
-│  - dynamodb/: UserDynamoRepository, UserDynamoEntity        │
-│  - EventPublisherMock                                        │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                    Starter Modules (Entry Point)                    │
+│   user-module-starter-postgre | user-module-starter-dynamodb       │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        │                        │                        │
+┌───────▼────────┐   ┌───────────▼───────────┐   ┌───────▼──────────┐
+│  Endpoint      │   │   Configuration        │   │  Infrastructure  │
+│  Module        │   │   Module               │   │  Modules         │
+│                │   │                        │   │                  │
+│ UserController │   │ SecurityConfiguration  │   │ PostgreSQL or    │
+│ Web Models     │   │ JwtAuthFilter          │   │ DynamoDB         │
+│ UserWebMapper  │   │ OAuth2 Config          │   │ Implementation   │
+└───────┬────────┘   └───────────┬────────────┘   └───────┬──────────┘
+        │                        │                        │
+        └────────────────────────┼────────────────────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │   Core Module   │
+                        │                 │
+                        │ Domain Models   │
+                        │ Services        │
+                        │ Ports           │
+                        │ Events          │
+                        └─────────────────┘
 ```
 
-### Layer Responsibilities
+**Mapping to Modules:**
 
-#### 1. **Endpoint Layer** (`endpoint/`)
+| Layer | Maven Module(s) | Responsibilities |
+|-------|----------------|------------------|
+| **Starter** | `user-module-starter-postgre`<br>`user-module-starter-dynamodb` | Application entry point, aggregates all dependencies |
+| **Endpoint** | `user-module-endpoint` | REST API controllers, request/response models |
+| **Configuration** | `user-module-configuration` | Auto-configuration, security setup, bean wiring |
+| **Infrastructure** | `user-module-infrastructure-postgre`<br>`user-module-infrastructure-dynamodb` | Persistence adapters (PostgreSQL or DynamoDB) |
+| **Core** | `user-module-core` | Domain models, business logic, port interfaces |
 
-- REST API controllers
-- Request/Response models
-- Security configuration (JWT filters, OAuth2)
-- Web-specific mappers
-- **Entry point**: Controllers receive HTTP requests
+### Module Responsibilities
 
-#### 2. **Core Layer** (`core/`)
+#### 1. **Starter Modules** (`user-module-starter-*`)
+
+**Purpose**: Convenience dependencies that aggregate all required modules for a specific persistence strategy.
+
+- **user-module-starter-postgre**: Includes configuration, endpoint, and PostgreSQL infrastructure
+- **user-module-starter-dynamodb**: Includes configuration, endpoint, and DynamoDB infrastructure
+- **Usage**: Applications only need to depend on one starter module
+- **Auto-configuration**: Automatically imports the appropriate UserModuleAutoConfiguration
+
+#### 2. **Core Module** (`user-module-core`)
+
+**Purpose**: Technology-agnostic business logic and domain models. This module has **zero** Spring dependencies (except for testing).
 
 - **Domain**: Business entities (`User`, `Role`, `Permission`)
-- **Service**: Business logic (`UserService`, `UserAuthenticationService`, `UserVerificationService`)
-- **Port**: Interfaces for external dependencies (`UserRepository`, `EventPublisher`, `UserAuthenticator`)
-- **DTO**: Data transfer objects
+- **Service**: Business logic (`UserService`, `UserAuthenticationService`, `UserVerificationService`, `JwtService`)
+- **Port**: Interfaces for external dependencies (`UserRepository`, `EventPublisher`, `UserAuthenticator`, `PasswordEncoder`)
+- **DTO**: Data transfer objects (`CreateUserDto`, `LoginUserDto`)
 - **Event**: Domain events (`UserCreatedEvent`, `UserVerifiedEvent`)
-- **Exception**: Business exceptions
+- **Exception**: Business exceptions (`UserException`, `UserExceptionKey`)
+- **Mapper**: Domain object mappers (`UserMapper`)
 
-#### 3. **Infrastructure Layer** (`infrastructure/`)
+#### 3. **Infrastructure Modules** (`user-module-infrastructure-*`)
 
-- **Persistence**: Database-specific implementations
-    - **postgre/**: PostgreSQL JPA repositories, entities, mappers
-    - **dynamodb/**: DynamoDB entities, mappers, repositories
-- **Messaging**: Event publishing implementations
-- External service integrations (AWS SES, SNS)
+**Purpose**: Implement core port interfaces using specific persistence technologies.
+
+**PostgreSQL Module** (`user-module-infrastructure-postgre`):
+- PostgreSQL JPA repositories (`UserPostgreJpaRepository`, `RolePostgreJpaRepository`)
+- JPA entities (`UserEntity`, `RoleEntity`, `PermissionEntity`)
+- Repository implementation (`UserPostgreRepository` implements `UserRepository`)
+- Entity mappers (`UserEntityMapper`)
+- Liquibase migrations in `src/main/resources/db/changelog/`
+
+**DynamoDB Module** (`user-module-infrastructure-dynamodb`):
+- DynamoDB entities (`UserDynamoEntity`, `RoleDynamoEntity`, `PermissionDynamoEntity`)
+- Repository implementation (`UserDynamoRepository` implements `UserRepository`)
+- Entity mappers (`UserDynamoEntityMapper`)
+- DynamoDB Enhanced Client configuration
+
+#### 4. **Endpoint Module** (`user-module-endpoint`)
+
+**Purpose**: REST API layer with controllers and web-specific models.
+
+- REST API controllers (`UserController`)
+- Request models (`CreateUserRequest`, `LoginUserRequest`)
+- Response models (`UserResponse`, `LoginTokenResponse`)
+- Web mappers (`UserWebMapper` - converts between domain and web models)
+- **Note**: This module is technology-agnostic and doesn't depend on Spring Security (that's in configuration module)
+
+#### 5. **Configuration Module** (`user-module-configuration`)
+
+**Purpose**: Auto-configuration, security setup, and bean wiring.
+
+- Auto-configuration classes (`UserConfiguration`)
+- Spring Security configuration (`SecurityConfiguration`)
+- JWT authentication filter (`JwtAuthFilter`)
+- OAuth2 configuration (`OAuth2GoogleConfiguration`, `OAuth2LoginSuccessHandler`)
+- Security adapters (`UserGoogleSpringAuthenticator` - implements core ports)
+- Configuration properties (`UserProperties`)
+- Bean definitions and conditional configurations
 
 ### Auto-Configuration Pattern
 
@@ -122,71 +218,122 @@ The module uses Spring Boot's **Auto-Configuration** mechanism to be easily inte
 - Provides conditional beans (`@ConditionalOnMissingBean`)
 - Can be customized by consuming applications
 
-## Directory Structure
+## Directory Structure - Multi-Module Maven
 
 ```
-src/main/java/com/comex/usermodule/
-├── UserModuleApplication.java          # Main Spring Boot application
-├── UserModuleAutoConfiguration.java    # Auto-configuration entry point
-├── configuration/                      # Configuration classes
-│   ├── SecurityConfiguration.java      # Security beans (JWT, Auth)
-│   ├── UserConfiguration.java          # User module beans
-│   ├── OAuth2GoogleConfiguration.java  # OAuth2 Google setup
-│   └── UserProperties.java             # Configuration properties
-├── core/                               # Core business logic (domain)
-│   ├── domain/                         # Domain models
-│   │   ├── User.java                   # User entity (implements UserDetails)
-│   │   ├── Role.java                   # Role entity
-│   │   └── UserStatus.java             # User status enum
-│   ├── dto/                            # Data transfer objects
-│   ├── event/                          # Domain events
-│   ├── exception/                      # Business exceptions
-│   ├── mapper/                         # Domain mappers
-│   ├── port/                           # Interfaces (hexagonal ports)
-│   │   ├── UserRepository.java
-│   │   ├── EventPublisher.java
-│   │   └── UserAuthenticator.java
-│   └── service/                        # Business services
-│       ├── UserService.java
-│       ├── UserAuthenticationService.java
-│       ├── UserVerificationService.java
-│       └── JwtService.java
-├── endpoint/                           # API layer (adapters)
-│   ├── controller/                     # REST controllers
-│   │   └── UserController.java
-│   ├── model/                          # Request/Response models
-│   ├── mapper/                         # Web mappers
-│   └── security/                       # Security components
-│       ├── jwt/JwtAuthFilter.java
-│       ├── UserSpringAuthenticator.java
-│       ├── UserGoogleSpringAuthenticator.java
-│       └── OAuth2LoginSuccessHandler.java
-└── infrastructure/                     # Infrastructure adapters
-    ├── persistence/                    # Database access
-    │   ├── postgre/                    # PostgreSQL implementations
-    │   │   ├── entity/                 # JPA entities
-    │   │   ├── jpa/                    # JPA repositories
-    │   │   ├── mapper/                 # Entity mappers
-    │   │   └── repository/             # Repository implementations
-    │   └── dynamodb/                   # DynamoDB implementations
-    │       ├── entity/                 # DynamoDB entities
-    │       ├── mapper/                 # DynamoDB mappers
-    │       └── repository/             # DynamoDB repositories
-    └── messaging/                      # Event publishing
-        └── EventPublisherMock.java
-
-src/main/resources/
-├── application.yml                     # Application configuration (PostgreSQL)
-├── application-dynamodb.yml            # DynamoDB profile configuration
-├── db/changelog/                       # Liquibase migrations (PostgreSQL only)
-│   ├── user-master.yml
-│   ├── 0_create-user-table.yml
-│   ├── 1_create-role-and-permission-tables.yml
-│   ├── insert-initial-roles.yml
-│   └── insert-initial-users.yml
-└── META-INF/spring/
-    └── org.springframework.boot.autoconfigure.AutoConfiguration.imports
+user-module/                                    # Parent Maven module (aggregator)
+├── pom.xml                                     # Parent POM with module definitions
+│
+├── user-module-core/                           # Core domain module
+│   ├── pom.xml
+│   └── src/main/java/com/comex/usermodule/core/
+│       ├── domain/                             # Domain models
+│       │   ├── User.java
+│       │   ├── Role.java
+│       │   └── UserStatus.java
+│       ├── dto/                                # Data transfer objects
+│       │   ├── CreateUserDto.java
+│       │   └── LoginUserDto.java
+│       ├── event/                              # Domain events
+│       │   ├── UserCreatedEvent.java
+│       │   └── UserVerifiedEvent.java
+│       ├── exception/                          # Business exceptions
+│       │   ├── UserException.java
+│       │   └── UserExceptionKey.java
+│       ├── mapper/                             # Domain mappers
+│       │   └── UserMapper.java
+│       ├── port/                               # Port interfaces (hexagonal)
+│       │   ├── UserRepository.java
+│       │   ├── EventPublisher.java
+│       │   ├── UserAuthenticator.java
+│       │   └── PasswordEncoder.java
+│       └── service/                            # Business services
+│           ├── UserService.java
+│           ├── UserAuthenticationService.java
+│           ├── UserVerificationService.java
+│           └── JwtService.java
+│
+├── user-module-infrastructure-postgre/         # PostgreSQL persistence
+│   ├── pom.xml
+│   ├── src/main/java/com/comex/usermodule/infrastructure/persistence/postgre/
+│   │   ├── entity/                             # JPA entities
+│   │   │   ├── UserEntity.java
+│   │   │   ├── RoleEntity.java
+│   │   │   └── PermissionEntity.java
+│   │   ├── jpa/                                # JPA repositories
+│   │   │   ├── UserPostgreJpaRepository.java
+│   │   │   └── RolePostgreJpaRepository.java
+│   │   ├── mapper/                             # Entity mappers
+│   │   │   └── UserEntityMapper.java
+│   │   └── repository/                         # Port implementations
+│   │       └── UserPostgreRepository.java
+│   └── src/main/resources/db/changelog/        # Liquibase migrations
+│       ├── user-master.yml
+│       ├── 0_create-user-table.yml
+│       ├── 1_create-role-and-permission-tables.yml
+│       ├── insert-initial-roles.yml
+│       └── insert-initial-users.yml
+│
+├── user-module-infrastructure-dynamodb/        # DynamoDB persistence
+│   ├── pom.xml
+│   └── src/main/java/com/comex/usermodule/infrastructure/persistence/dynamodb/
+│       ├── entity/                             # DynamoDB entities
+│       │   ├── UserDynamoEntity.java
+│       │   ├── RoleDynamoEntity.java
+│       │   └── PermissionDynamoEntity.java
+│       ├── mapper/                             # Entity mappers
+│       │   └── UserDynamoEntityMapper.java
+│       └── repository/                         # Port implementations
+│           └── UserDynamoRepository.java
+│
+├── user-module-endpoint/                       # REST API endpoints
+│   ├── pom.xml
+│   └── src/main/java/com/comex/usermodule/endpoint/
+│       ├── controller/                         # REST controllers
+│       │   └── UserController.java
+│       ├── model/                              # Request/Response models
+│       │   ├── CreateUserRequest.java
+│       │   ├── LoginUserRequest.java
+│       │   ├── UserResponse.java
+│       │   └── LoginTokenResponse.java
+│       └── mapper/                             # Web mappers
+│           └── UserWebMapper.java
+│
+├── user-module-configuration/                  # Auto-configuration & security
+│   ├── pom.xml
+│   └── src/main/java/com/comex/usermodule/
+│       ├── configuration/                      # Configuration classes
+│       │   ├── UserConfiguration.java
+│       │   ├── SecurityConfiguration.java
+│       │   ├── OAuth2GoogleConfiguration.java
+│       │   └── UserProperties.java
+│       └── security/                           # Security components
+│           ├── jwt/JwtAuthFilter.java
+│           ├── UserGoogleSpringAuthenticator.java
+│           └── OAuth2LoginSuccessHandler.java
+│
+├── user-module-starter-postgre/               # PostgreSQL starter
+│   ├── pom.xml                                 # Aggregates: configuration, endpoint, infra-postgre
+│   └── src/main/java/com/comex/usermodule/starter/postgre/
+│       ├── UserModuleAutoConfiguration.java
+│       └── configuration/
+│           └── UserPostgreRepositoryConfiguration.java
+│
+└── user-module-starter-dynamodb/              # DynamoDB starter
+    ├── pom.xml                                 # Aggregates: configuration, endpoint, infra-dynamodb
+    └── src/main/java/com/comex/usermodule/starter/dynamodb/
+        ├── UserModuleAutoConfiguration.java
+        └── configuration/
+            └── UserDynamoRepositoryConfiguration.java
 ```
+
+### Module Structure Benefits
+
+1. **Clear Separation**: Each module has a single, well-defined responsibility
+2. **Dependency Management**: Core module has no Spring dependencies, making business logic portable
+3. **Flexible Integration**: Applications choose PostgreSQL or DynamoDB starter based on needs
+4. **Independent Testing**: Each module can be tested in isolation
+5. **Reusability**: Modules can be mixed and matched for different use cases
 
 ## Code Conventions & Style
 
@@ -207,10 +354,12 @@ src/main/resources/
 
 ### Package Organization
 
-- **Separation by layer** (endpoint, core, infrastructure)
-- **Separation by concern** within layers (domain, service, port, etc.)
-- **Separation by technology** in infrastructure/persistence (postgre/, dynamodb/)
-- Clear boundaries between layers
+- **Separation by module** - Each Maven module is a separate deliverable artifact
+- **Separation by layer** - Core, endpoint, infrastructure, and configuration are separate modules
+- **Separation by concern** within modules (domain, service, port, etc. within core module)
+- **Separation by technology** - PostgreSQL and DynamoDB are separate infrastructure modules
+- **Clear module boundaries** - Dependencies flow in one direction (no circular dependencies)
+- **Module independence** - Each module can be tested and deployed independently
 
 ### Lombok Usage
 
@@ -373,81 +522,143 @@ Configured via `@ConfigurationProperties` with prefix `user`:
 
 ### When Adding New Features
 
-1. **Start with Domain**: Define domain models in `core/domain/`
-2. **Define Ports**: Create interfaces in `core/port/` for external dependencies
-3. **Implement Services**: Add business logic in `core/service/`
-4. **Create Adapters**: Implement ports in `infrastructure/` or `endpoint/`
-5. **Expose API**: Add controllers in `endpoint/controller/`
-6. **Add Tests**: Write unit and integration tests
+1. **Start with Domain** (in `user-module-core`): Define domain models in `core/domain/`
+2. **Define Ports** (in `user-module-core`): Create interfaces in `core/port/` for external dependencies
+3. **Implement Services** (in `user-module-core`): Add business logic in `core/service/`
+4. **Create Adapters**:
+   - Infrastructure: Implement ports in `user-module-infrastructure-*` modules
+   - Endpoint: Add web layer code in `user-module-endpoint`
+5. **Expose API** (in `user-module-endpoint`): Add controllers in `endpoint/controller/`
+6. **Configure** (in `user-module-configuration`): Wire beans and add security if needed
+7. **Add Tests**: Write tests in each module (see Testing Strategy below)
 
 ### When Modifying Database
 
-#### PostgreSQL:
+#### PostgreSQL (user-module-infrastructure-postgre):
 
-1. Create new Liquibase changelog in `src/main/resources/db/changelog/`
+1. Create new Liquibase changelog in `user-module-infrastructure-postgre/src/main/resources/db/changelog/`
 2. Follow naming convention: `{number}_{description}.yml`
 3. Add to master changelog (`user-master.yml`)
-4. Update JPA entities in `infrastructure/persistence/postgre/entity/`
-5. Update JPA repositories in `infrastructure/persistence/postgre/jpa/`
-6. Update mappers in `infrastructure/persistence/postgre/mapper/`
-7. Update domain models if needed
+4. Update JPA entities in `user-module-infrastructure-postgre/.../entity/`
+5. Update JPA repositories in `user-module-infrastructure-postgre/.../jpa/`
+6. Update mappers in `user-module-infrastructure-postgre/.../mapper/`
+7. Update domain models in `user-module-core` if needed
 
-#### DynamoDB:
+#### DynamoDB (user-module-infrastructure-dynamodb):
 
-1. Update DynamoDB entities in `infrastructure/persistence/dynamodb/entity/`
+1. Update DynamoDB entities in `user-module-infrastructure-dynamodb/.../entity/`
 2. Update table schema in AWS (add/modify attributes, indexes)
-3. Update mappers in `infrastructure/persistence/dynamodb/mapper/`
-4. Update domain models if needed
+3. Update mappers in `user-module-infrastructure-dynamodb/.../mapper/`
+4. Update domain models in `user-module-core` if needed
 
-### Switching Between Persistence Implementations
+### Choosing Between PostgreSQL and DynamoDB
 
-To switch between PostgreSQL and DynamoDB:
+Applications choose persistence strategy by selecting the appropriate **starter module**:
 
-1. **Update configuration** - Set `user.persistence.type` to `postgresql` or `dynamodb`
-2. **Use Spring profiles** - Activate `application-dynamodb.yml` profile using `--spring.profiles.active=dynamodb`
-3. **Ensure database is ready**:
-    - PostgreSQL: Database and tables created via Liquibase
-    - DynamoDB: Table and GSI created manually
+**Option 1: PostgreSQL**
+```xml
+<dependency>
+    <groupId>com.comex</groupId>
+    <artifactId>user-module-starter-postgre</artifactId>
+    <version>0.0.6-SNAPSHOT</version>
+</dependency>
+```
+
+**Option 2: DynamoDB**
+```xml
+<dependency>
+    <groupId>com.comex</groupId>
+    <artifactId>user-module-starter-dynamodb</artifactId>
+    <version>0.0.6-SNAPSHOT</version>
+</dependency>
+```
+
+The starter module automatically includes the correct infrastructure module and configuration.
 
 **Note**: Data is NOT automatically migrated between databases. Migration must be handled separately if switching persistence strategies.
 
-### When Adding Dependencies
+### When Adding Module Dependencies
 
-- Add to `pom.xml` with proper versioning
-- Use properties for version management
-- Consider scope (compile, runtime, test, provided)
+**In Parent POM** (`user-module/pom.xml`):
+- Add version properties for external dependencies
+- Add dependencies to `<dependencyManagement>` section
+
+**In Module POM** (e.g., `user-module-core/pom.xml`):
+- Reference dependencies without version (inherited from parent)
+- Add module-to-module dependencies in `<dependencies>` section
+- Respect dependency flow: `starter → configuration/endpoint/infrastructure → core`
 
 ## Testing Strategy
 
-The user-module follows strict testing conventions to ensure consistency, maintainability, and clarity. Tests are
-organized by layer (core, infrastructure, endpoint) with specific rules for each.
+The user-module follows strict testing conventions to ensure consistency, maintainability, and clarity. Tests are organized **by Maven module**, with each module containing its own tests.
 
-### Test Structure
+### Test Structure - Multi-Module
 
 ```
-src/test/java/com/comex/usermodule/
-├── core/
-│   ├── helper/
-│   │   └── UserTestInventory.java      # Test data factory
-│   └── service/
-│       ├── UserServiceTest.java
-│       ├── UserAuthenticationServiceTest.java
-│       ├── UserVerificationServiceTest.java
-│       └── JwtServiceTest.java
-├── infrastructure/
-│   └── persistence/
-│       ├── postgre/
-│       │   ├── AbstractPostgresIntegrationTest.java    # Base class for PostgreSQL tests
-│       │   ├── PostgresTestConfiguration.java          # Test configuration
-│       │   └── UserPostgreRepositoryTest.java          # PostgreSQL integration tests (7 tests)
-│       └── dynamodb/
-│           ├── AbstractDynamoDbIntegrationTest.java    # Base class for DynamoDB tests
-│           ├── DynamoDbTestConfiguration.java          # Test configuration
-│           └── UserDynamoRepositoryTest.java           # DynamoDB integration tests (7 tests)
-├── endpoint/
-│   └── [Endpoint tests - to be covered]
-└── UserModuleApplicationTests.java
+user-module/                                    # Parent module (no tests)
+│
+├── user-module-core/                           # Core module tests
+│   └── src/test/java/com/comex/usermodule/core/
+│       ├── helper/
+│       │   └── UserTestInventory.java          # Test data factory (exported as test-jar)
+│       └── service/
+│           ├── UserServiceTest.java            # 5 tests
+│           ├── UserAuthenticationServiceTest.java  # 1 test
+│           ├── UserVerificationServiceTest.java    # 1 test
+│           └── JwtServiceTest.java             # 8 tests
+│
+├── user-module-infrastructure-postgre/         # PostgreSQL module tests
+│   └── src/test/java/com/comex/usermodule/infrastructure/persistence/postgre/
+│       ├── AbstractPostgresIntegrationTest.java    # Base class for PostgreSQL tests
+│       ├── PostgresTestConfiguration.java          # Test-specific bean configuration
+│       └── UserPostgreRepositoryTest.java          # 7 integration tests (with Testcontainers)
+│
+├── user-module-infrastructure-dynamodb/        # DynamoDB module tests
+│   └── src/test/java/com/comex/usermodule/infrastructure/persistence/dynamodb/
+│       ├── AbstractDynamoDbIntegrationTest.java    # Base class for DynamoDB tests
+│       ├── DynamoDbTestConfiguration.java          # Test-specific bean configuration
+│       └── UserDynamoRepositoryTest.java           # 7 integration tests (with LocalStack)
+│
+└── user-module-endpoint/                       # Endpoint module tests
+    └── src/test/java/com/comex/usermodule/endpoint/
+        ├── EndpointTestConfiguration.java      # Required @SpringBootConfiguration for @WebMvcTest
+        ├── helper/
+        │   └── EndpointTestInventory.java      # Web-specific test data factory
+        └── controller/
+            └── UserControllerTest.java         # 8 controller tests (with MockMvc)
 ```
+
+### Test-Jar Artifact (user-module-core)
+
+The **user-module-core** module exports its test classes as a **test-jar** artifact to allow other modules to reuse test data:
+
+**Configured in** `user-module-core/pom.xml`:
+```xml
+<plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-jar-plugin</artifactId>
+    <executions>
+        <execution>
+            <goals>
+                <goal>test-jar</goal>
+            </goals>
+        </execution>
+    </executions>
+</plugin>
+```
+
+**Used in other modules** (e.g., `user-module-endpoint/pom.xml`):
+```xml
+<dependency>
+    <groupId>com.comex</groupId>
+    <artifactId>user-module-core</artifactId>
+    <version>${project.version}</version>
+    <type>test-jar</type>
+    <scope>test</scope>
+</dependency>
+```
+
+This allows endpoint and infrastructure tests to use `UserTestInventory` for creating test data.
 
 ### Testing Tools
 
@@ -665,25 +876,169 @@ src/test/java/com/comex/usermodule/infrastructure/persistence/
 
 ### Endpoint Testing
 
-Testing strategies for the endpoint layer will be covered in future documentation updates.
+Testing strategies for the **user-module-endpoint** module with `@WebMvcTest`.
+
+#### Test Organization
+
+```
+user-module-endpoint/src/test/java/com/comex/usermodule/endpoint/
+├── EndpointTestConfiguration.java      # @SpringBootConfiguration for @WebMvcTest
+├── helper/
+│   └── EndpointTestInventory.java      # Web-specific test data factory
+└── controller/
+    └── UserControllerTest.java         # Controller tests with MockMvc
+```
+
+#### Endpoint Test Characteristics
+
+**Key Principles:**
+- Uses `@WebMvcTest` for lightweight controller slice testing
+- Mocks service dependencies (no database or full Spring Boot context)
+- Uses MockMvc for HTTP request/response testing
+- Excludes security auto-configuration for isolated controller testing
+- **Requires EndpointTestConfiguration** - provides @SpringBootConfiguration for @WebMvcTest
+
+#### EndpointTestConfiguration
+
+Since `user-module-endpoint` is a library module (not a standalone application), it lacks a `@SpringBootApplication` class. The `@WebMvcTest` annotation requires a `@SpringBootConfiguration` class to be found, so we provide one for tests:
+
+**Location**: `user-module-endpoint/src/test/java/com/comex/usermodule/endpoint/EndpointTestConfiguration.java`
+
+This configuration:
+- **Provides @SpringBootConfiguration** - Required by @WebMvcTest
+- **Enables auto-configuration** - Loads minimal Spring Boot configuration for web tests
+- **Lives in test source** - Only used during testing, not packaged with the module
+- **Discovered automatically** - @WebMvcTest scans the test package for @SpringBootConfiguration
+
+#### UserControllerTest
+
+**Setup:**
+- Uses `@WebMvcTest(controllers = UserController.class)` for controller slice testing
+- Excludes `SecurityAutoConfiguration` and `OAuth2ClientAutoConfiguration` to isolate controller logic
+- Uses `@Import({UserController.class, UserWebMapper.class})` to import required beans
+- Mocks service dependencies with `@MockBean` (UserService, UserAuthenticationService, UserVerificationService)
+- Autowires MockMvc as `sut` (system under test)
+
+**Test Methods (8 tests):**
+1. `testCreateUser` - Create user endpoint
+2. `testCreateUserWithVariousInputs` - Parameterized test for edge cases
+3. `testLogin` - Login endpoint
+4. `testVerify` - Email verification endpoint
+5. `testFindByEmail` - Get user by email
+6. `testFindByEmailWithMultipleRoles` - User with multiple roles
+
+**Key Principles:**
+- Controller tests are isolated from service and persistence layers
+- Services are mocked - tests verify controller behavior only
+- Uses MockMvc to simulate HTTP requests
+- Verifies HTTP status codes and JSON response structure
+- Depends on user-module-core test-jar for test data (UserTestInventory)
+
+#### Running Endpoint Tests
+
+**Important:** Before running endpoint tests, ensure `user-module-core` is installed to make the test-jar available:
+
+```bash
+# Install core module (builds test-jar)
+./mvnw clean install -pl user-module-core -am
+
+# Run endpoint tests
+./mvnw test -pl user-module-endpoint
+```
+
+**Why this is needed:**
+- Endpoint tests depend on `user-module-core:test-jar` for test data
+- The test-jar artifact must be available in your local Maven repository
+- Running `mvn install` on core module creates and installs the test-jar
 
 ### Running Tests
 
-**Maven commands:**
-- Run all tests: `./mvnw test`
-- Run specific test class: `./mvnw test -Dtest=UserServiceTest`
-- Run specific test method: `./mvnw test -Dtest=UserServiceTest#testCreateUser`
-- Run tests with coverage: `./mvnw test jacoco:report`
-- Run tests in a specific package: `./mvnw test -Dtest="com.comex.usermodule.core.service.*Test"`
+**Maven commands for multi-module project:**
+
+```bash
+# Run all tests in all modules
+./mvnw test
+
+# Run tests in a specific module
+./mvnw test -pl user-module-core
+./mvnw test -pl user-module-infrastructure-postgre
+./mvnw test -pl user-module-infrastructure-dynamodb
+./mvnw test -pl user-module-endpoint
+
+# Run specific test class in a module
+./mvnw test -pl user-module-core -Dtest=UserServiceTest
+
+# Run specific test method
+./mvnw test -pl user-module-core -Dtest=UserServiceTest#testCreateUser
+
+# Run tests with coverage
+./mvnw test jacoco:report
+
+# Run tests in a specific package
+./mvnw test -pl user-module-core -Dtest="com.comex.usermodule.core.service.*Test"
+
+# Build and test specific module with dependencies
+./mvnw test -pl user-module-endpoint -am  # Also builds user-module-core (dependency)
+
+# Install core module (creates test-jar) before running endpoint tests
+./mvnw clean install -pl user-module-core -am
+./mvnw test -pl user-module-endpoint
+```
+
+**Test execution order:**
+1. `user-module-core` - No external dependencies (runs first)
+2. `user-module-infrastructure-postgre` / `user-module-infrastructure-dynamodb` - Depends on core
+3. `user-module-endpoint` - Depends on core test-jar (requires core to be installed)
 
 ## Build & Deployment
 
-### Maven Commands
+### Maven Commands - Multi-Module
 
-- Build and install locally: `./mvnw clean install`
-- Build JAR: `./mvnw clean package`
-- Run application: `./mvnw spring-boot:run`
-- Update version: `./mvnw versions:set -DnewVersion=X.Y.Z`
+```bash
+# Build all modules
+./mvnw clean package
+
+# Build and install all modules locally (recommended)
+./mvnw clean install
+
+# Build specific module with its dependencies
+./mvnw clean package -pl user-module-starter-postgre -am
+
+# Build without tests
+./mvnw clean install -DskipTests
+
+# Update version across all modules
+./mvnw versions:set -DnewVersion=X.Y.Z
+
+# Build specific module only (without dependencies)
+./mvnw clean package -pl user-module-core
+```
+
+### Module Build Order
+
+Maven automatically determines build order based on dependencies:
+
+1. **user-module-core** (no dependencies)
+2. **user-module-infrastructure-postgre**, **user-module-infrastructure-dynamodb**, **user-module-endpoint** (depend on core)
+3. **user-module-configuration** (depends on core)
+4. **user-module-starter-postgre**, **user-module-starter-dynamodb** (depend on all modules)
+
+### Artifacts Produced
+
+Each module produces its own JAR artifact:
+
+| Module | Artifact | Type |
+|--------|----------|------|
+| user-module-core | `user-module-core-0.0.6-SNAPSHOT.jar` | Library JAR |
+| user-module-core | `user-module-core-0.0.6-SNAPSHOT-tests.jar` | Test JAR (test classes) |
+| user-module-infrastructure-postgre | `user-module-infrastructure-postgre-0.0.6-SNAPSHOT.jar` | Library JAR |
+| user-module-infrastructure-dynamodb | `user-module-infrastructure-dynamodb-0.0.6-SNAPSHOT.jar` | Library JAR |
+| user-module-endpoint | `user-module-endpoint-0.0.6-SNAPSHOT.jar` | Library JAR |
+| user-module-configuration | `user-module-configuration-0.0.6-SNAPSHOT.jar` | Library JAR |
+| user-module-starter-postgre | `user-module-starter-postgre-0.0.6-SNAPSHOT.jar` | Starter JAR |
+| user-module-starter-dynamodb | `user-module-starter-dynamodb-0.0.6-SNAPSHOT.jar` | Starter JAR |
+
+**Note**: Applications typically only depend on one of the starter modules, which transitively includes all required dependencies.
 
 ### Deployment
 
@@ -695,65 +1050,6 @@ Testing strategies for the endpoint layer will be covered in future documentatio
 
 - Docker configuration available in `docker/` directory
 - Can be containerized for microservices deployment
-
-## Implementation Highlights
-
-### Dual Persistence Support
-
-The module demonstrates a clean implementation of **hexagonal architecture** by supporting multiple persistence
-strategies:
-
-1. **Single Port Interface** - `UserRepository` interface in `core/port/` defines contract
-2. **Multiple Adapters** - `UserPostgreRepository` and `UserDynamoRepository` implement the same interface
-3. **Conditional Configuration** - Spring's `@ConditionalOnProperty` activates appropriate implementation
-4. **No Core Changes** - Business logic in `core/` remains unchanged regardless of persistence choice
-5. **Configuration-Driven** - Switch persistence via simple property change
-6. **Organized Structure** - PostgreSQL and DynamoDB implementations are cleanly separated in dedicated packages
-
-This approach allows:
-
-- Easy migration between databases
-- Testing with different persistence strategies
-- Adding new persistence implementations without modifying core logic
-- Flexibility for different deployment environments (cloud vs on-premise)
-- Clear separation of technology-specific code
-
-### Package Structure
-
-The infrastructure layer is organized by persistence technology:
-
-```
-infrastructure/persistence/
-├── postgre/                    # PostgreSQL implementation
-│   ├── entity/                 # UserEntity, RoleEntity, PermissionEntity
-│   ├── jpa/                    # UserPostgreJpaRepository, RolePostgreJpaRepository
-│   ├── mapper/                 # UserEntityMapper (JPA ↔ Domain)
-│   └── repository/             # UserPostgreRepository (implements UserRepository)
-└── dynamodb/                   # DynamoDB implementation
-    ├── entity/                 # UserDynamoEntity, RoleDynamoEntity, PermissionDynamoEntity
-    ├── mapper/                 # UserDynamoEntityMapper (DynamoDB ↔ Domain)
-    └── repository/             # UserDynamoRepository (implements UserRepository)
-```
-
-This structure ensures:
-
-- Technology-specific code is isolated
-- No naming conflicts between implementations
-- Easy to locate persistence-related code
-- Simple to add additional persistence options (e.g., MongoDB, Cassandra)
-
-## Additional Resources
-
-- Spring Boot Documentation: https://docs.spring.io/spring-boot/docs/current/reference/html/
-- Spring Security: https://docs.spring.io/spring-security/reference/
-- Liquibase: https://docs.liquibase.com/
-- JWT: https://jwt.io/
-- AWS DynamoDB Developer Guide: https://docs.aws.amazon.com/dynamodb/
-- DynamoDB Enhanced
-  Client: https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/dynamodb-enhanced-client.html
-- DynamoDB Local: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html
-
----
 
 **Last Updated**: October 2025
 **Maintained By**: Comex Development Team

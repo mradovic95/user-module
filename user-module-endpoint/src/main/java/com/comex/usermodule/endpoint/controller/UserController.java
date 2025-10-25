@@ -17,6 +17,7 @@ import com.comex.usermodule.endpoint.mapper.UserWebMapper;
 import com.comex.usermodule.endpoint.model.CreateUserRequest;
 import com.comex.usermodule.endpoint.model.LoginTokenResponse;
 import com.comex.usermodule.endpoint.model.LoginUserRequest;
+import com.comex.usermodule.endpoint.model.UserResponse;
 
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
@@ -45,8 +46,13 @@ public class UserController {
 	}
 
 	@GetMapping("/verify")
-	public ResponseEntity<Void> login(@RequestParam("code") String code) {
+	public ResponseEntity<Void> verify(@RequestParam("code") String code) {
 		userVerificationService.verify(code);
 		return new ResponseEntity<>(HttpStatus.OK);
+	}
+
+	@GetMapping
+	public ResponseEntity<UserResponse> findByEmail(@RequestParam("email") String email) {
+		return ResponseEntity.ok(userWebMapper.toUserResponse(userService.findByEmail(email)));
 	}
 }

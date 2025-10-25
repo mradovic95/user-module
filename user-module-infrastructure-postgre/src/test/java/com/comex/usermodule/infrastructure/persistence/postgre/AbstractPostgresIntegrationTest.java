@@ -2,7 +2,7 @@ package com.comex.usermodule.infrastructure.persistence.postgre;
 
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -11,7 +11,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(PostgresTestConfiguration.class)
+@ContextConfiguration(classes = PostgresTestConfiguration.class)
 @Testcontainers
 public abstract class AbstractPostgresIntegrationTest {
 

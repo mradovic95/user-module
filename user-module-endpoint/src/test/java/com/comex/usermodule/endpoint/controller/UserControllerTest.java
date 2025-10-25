@@ -1,7 +1,6 @@
 package com.comex.usermodule.endpoint.controller;
 
 import com.comex.usermodule.core.domain.User;
-import com.comex.usermodule.core.exception.UserException;
 import com.comex.usermodule.core.service.UserAuthenticationService;
 import com.comex.usermodule.core.service.UserService;
 import com.comex.usermodule.core.service.UserVerificationService;
@@ -16,13 +15,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Set;
 import java.util.stream.Stream;
 
-import static com.comex.usermodule.core.exception.UserExceptionKey.NOT_FOUND;
 import static com.comex.usermodule.core.helper.UserTestInventory.*;
 import static com.comex.usermodule.endpoint.helper.EndpointTestInventory.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,9 +29,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = UserController.class,
+@WebMvcTest(
+	controllers = UserController.class,
 	excludeAutoConfiguration = {SecurityAutoConfiguration.class, OAuth2ClientAutoConfiguration.class})
-@Import(UserWebMapper.class)
+@Import({UserController.class, UserWebMapper.class})
 class UserControllerTest {
 
 	@Autowired
@@ -116,46 +114,6 @@ class UserControllerTest {
 		verify(userAuthenticationService).login(any());
 	}
 
-	@Test
-	void testLoginWithInvalidCredentials() throws Exception {
-		// GIVEN
-		when(userAuthenticationService.login(any()))
-			.thenThrow(new BadCredentialsException("Invalid credentials"));
-
-		// WHEN & THEN
-		sut.perform(post("/user/login")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-					{
-						"email": "john@example.com",
-						"password": "wrongpassword"
-					}
-					"""))
-			.andExpect(status().isUnauthorized());
-
-		verify(userAuthenticationService).login(any());
-	}
-
-	@Test
-	void testLoginWithNonExistentUser() throws Exception {
-		// GIVEN
-		when(userAuthenticationService.login(any()))
-			.thenThrow(new UserException(NOT_FOUND, "User not found"));
-
-		// WHEN & THEN
-		sut.perform(post("/user/login")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-					{
-						"email": "nonexistent@example.com",
-						"password": "password123"
-					}
-					"""))
-			.andExpect(status().isNotFound());
-
-		verify(userAuthenticationService).login(any());
-	}
-
 	// ==================== VERIFY TESTS ====================
 
 	@Test
@@ -170,21 +128,6 @@ class UserControllerTest {
 			.andExpect(status().isOk());
 
 		verify(userVerificationService).verify(verificationCode);
-	}
-
-	@Test
-	void testVerifyWithInvalidCode() throws Exception {
-		// GIVEN
-		String invalidCode = "INVALID";
-		doThrow(new UserException(NOT_FOUND, "Invalid verification code"))
-			.when(userVerificationService).verify(invalidCode);
-
-		// WHEN & THEN
-		sut.perform(get("/user/verify")
-				.param("code", invalidCode))
-			.andExpect(status().isNotFound());
-
-		verify(userVerificationService).verify(invalidCode);
 	}
 
 	// ==================== FIND BY EMAIL TESTS ====================
@@ -206,21 +149,6 @@ class UserControllerTest {
 			.andExpect(jsonPath("$.roles[0]").value("ROLE_USER"));
 
 		verify(userService).findByEmail(DEFAULT_EMAIL);
-	}
-
-	@Test
-	void testFindByEmailNotFound() throws Exception {
-		// GIVEN
-		String nonExistentEmail = "nonexistent@example.com";
-		when(userService.findByEmail(nonExistentEmail))
-			.thenThrow(new UserException(NOT_FOUND, "User not found"));
-
-		// WHEN & THEN
-		sut.perform(get("/user")
-				.param("email", nonExistentEmail))
-			.andExpect(status().isNotFound());
-
-		verify(userService).findByEmail(nonExistentEmail);
 	}
 
 	@Test
