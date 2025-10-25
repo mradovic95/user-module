@@ -71,38 +71,6 @@ user-module (parent pom)
 └── user-module-starter-dynamodb          # DynamoDB starter dependency
 ```
 
-### Module Descriptions
-
-| Module | Description | Key Components | Depends On |
-|--------|-------------|----------------|------------|
-| **user-module-core** | Domain models, business logic, port interfaces | User, Role, UserService, UserRepository (interface) | None |
-| **user-module-infrastructure-postgre** | PostgreSQL persistence implementation | UserPostgreRepository, UserEntity, Liquibase migrations | user-module-core |
-| **user-module-infrastructure-dynamodb** | DynamoDB persistence implementation | UserDynamoRepository, UserDynamoEntity | user-module-core |
-| **user-module-endpoint** | REST API endpoints and web models | UserController, CreateUserRequest, UserResponse | user-module-core |
-| **user-module-configuration** | Auto-configuration, security, bean wiring | SecurityConfiguration, JwtAuthFilter, UserProperties | user-module-core |
-| **user-module-starter-postgre** | All-in-one PostgreSQL starter | Auto-configuration imports | configuration, infrastructure-postgre |
-| **user-module-starter-dynamodb** | All-in-one DynamoDB starter | Auto-configuration imports | configuration, infrastructure-dynamodb |
-
-### Module Dependencies
-
-```
-user-module-starter-postgre
-  ├── user-module-configuration
-  │     └── user-module-core
-  ├── user-module-infrastructure-postgre
-  │     └── user-module-core
-  └── user-module-endpoint (transitive)
-        └── user-module-core
-
-user-module-starter-dynamodb
-  ├── user-module-configuration
-  │     └── user-module-core
-  ├── user-module-infrastructure-dynamodb
-  │     └── user-module-core
-  └── user-module-endpoint (transitive)
-        └── user-module-core
-```
-
 ## Architecture & Design Patterns
 
 ### Hexagonal Architecture (Ports & Adapters)
@@ -137,16 +105,6 @@ The project follows **Hexagonal Architecture** principles with clear separation 
                         │ Events          │
                         └─────────────────┘
 ```
-
-**Mapping to Modules:**
-
-| Layer | Maven Module(s) | Responsibilities |
-|-------|----------------|------------------|
-| **Starter** | `user-module-starter-postgre`<br>`user-module-starter-dynamodb` | Application entry point, aggregates all dependencies |
-| **Endpoint** | `user-module-endpoint` | REST API controllers, request/response models |
-| **Configuration** | `user-module-configuration` | Auto-configuration, security setup, bean wiring |
-| **Infrastructure** | `user-module-infrastructure-postgre`<br>`user-module-infrastructure-dynamodb` | Persistence adapters (PostgreSQL or DynamoDB) |
-| **Core** | `user-module-core` | Domain models, business logic, port interfaces |
 
 ### Module Responsibilities
 
@@ -594,40 +552,6 @@ The user-module follows strict testing conventions to ensure consistency, mainta
 
 ### Test Structure - Multi-Module
 
-```
-user-module/                                    # Parent module (no tests)
-│
-├── user-module-core/                           # Core module tests
-│   └── src/test/java/com/comex/usermodule/core/
-│       ├── helper/
-│       │   └── UserTestInventory.java          # Test data factory (exported as test-jar)
-│       └── service/
-│           ├── UserServiceTest.java            # 5 tests
-│           ├── UserAuthenticationServiceTest.java  # 1 test
-│           ├── UserVerificationServiceTest.java    # 1 test
-│           └── JwtServiceTest.java             # 8 tests
-│
-├── user-module-infrastructure-postgre/         # PostgreSQL module tests
-│   └── src/test/java/com/comex/usermodule/infrastructure/persistence/postgre/
-│       ├── AbstractPostgresIntegrationTest.java    # Base class for PostgreSQL tests
-│       ├── PostgresTestConfiguration.java          # Test-specific bean configuration
-│       └── UserPostgreRepositoryTest.java          # 7 integration tests (with Testcontainers)
-│
-├── user-module-infrastructure-dynamodb/        # DynamoDB module tests
-│   └── src/test/java/com/comex/usermodule/infrastructure/persistence/dynamodb/
-│       ├── AbstractDynamoDbIntegrationTest.java    # Base class for DynamoDB tests
-│       ├── DynamoDbTestConfiguration.java          # Test-specific bean configuration
-│       └── UserDynamoRepositoryTest.java           # 7 integration tests (with LocalStack)
-│
-└── user-module-endpoint/                       # Endpoint module tests
-    └── src/test/java/com/comex/usermodule/endpoint/
-        ├── EndpointTestConfiguration.java      # Required @SpringBootConfiguration for @WebMvcTest
-        ├── helper/
-        │   └── EndpointTestInventory.java      # Web-specific test data factory
-        └── controller/
-            └── UserControllerTest.java         # 8 controller tests (with MockMvc)
-```
-
 ### Test-Jar Artifact (user-module-core)
 
 The **user-module-core** module exports its test classes as a **test-jar** artifact to allow other modules to reuse test data:
@@ -950,106 +874,6 @@ This configuration:
 - Endpoint tests depend on `user-module-core:test-jar` for test data
 - The test-jar artifact must be available in your local Maven repository
 - Running `mvn install` on core module creates and installs the test-jar
-
-### Running Tests
-
-**Maven commands for multi-module project:**
-
-```bash
-# Run all tests in all modules
-./mvnw test
-
-# Run tests in a specific module
-./mvnw test -pl user-module-core
-./mvnw test -pl user-module-infrastructure-postgre
-./mvnw test -pl user-module-infrastructure-dynamodb
-./mvnw test -pl user-module-endpoint
-
-# Run specific test class in a module
-./mvnw test -pl user-module-core -Dtest=UserServiceTest
-
-# Run specific test method
-./mvnw test -pl user-module-core -Dtest=UserServiceTest#testCreateUser
-
-# Run tests with coverage
-./mvnw test jacoco:report
-
-# Run tests in a specific package
-./mvnw test -pl user-module-core -Dtest="com.comex.usermodule.core.service.*Test"
-
-# Build and test specific module with dependencies
-./mvnw test -pl user-module-endpoint -am  # Also builds user-module-core (dependency)
-
-# Install core module (creates test-jar) before running endpoint tests
-./mvnw clean install -pl user-module-core -am
-./mvnw test -pl user-module-endpoint
-```
-
-**Test execution order:**
-1. `user-module-core` - No external dependencies (runs first)
-2. `user-module-infrastructure-postgre` / `user-module-infrastructure-dynamodb` - Depends on core
-3. `user-module-endpoint` - Depends on core test-jar (requires core to be installed)
-
-## Build & Deployment
-
-### Maven Commands - Multi-Module
-
-```bash
-# Build all modules
-./mvnw clean package
-
-# Build and install all modules locally (recommended)
-./mvnw clean install
-
-# Build specific module with its dependencies
-./mvnw clean package -pl user-module-starter-postgre -am
-
-# Build without tests
-./mvnw clean install -DskipTests
-
-# Update version across all modules
-./mvnw versions:set -DnewVersion=X.Y.Z
-
-# Build specific module only (without dependencies)
-./mvnw clean package -pl user-module-core
-```
-
-### Module Build Order
-
-Maven automatically determines build order based on dependencies:
-
-1. **user-module-core** (no dependencies)
-2. **user-module-infrastructure-postgre**, **user-module-infrastructure-dynamodb**, **user-module-endpoint** (depend on core)
-3. **user-module-configuration** (depends on core)
-4. **user-module-starter-postgre**, **user-module-starter-dynamodb** (depend on all modules)
-
-### Artifacts Produced
-
-Each module produces its own JAR artifact:
-
-| Module | Artifact | Type |
-|--------|----------|------|
-| user-module-core | `user-module-core-0.0.6-SNAPSHOT.jar` | Library JAR |
-| user-module-core | `user-module-core-0.0.6-SNAPSHOT-tests.jar` | Test JAR (test classes) |
-| user-module-infrastructure-postgre | `user-module-infrastructure-postgre-0.0.6-SNAPSHOT.jar` | Library JAR |
-| user-module-infrastructure-dynamodb | `user-module-infrastructure-dynamodb-0.0.6-SNAPSHOT.jar` | Library JAR |
-| user-module-endpoint | `user-module-endpoint-0.0.6-SNAPSHOT.jar` | Library JAR |
-| user-module-configuration | `user-module-configuration-0.0.6-SNAPSHOT.jar` | Library JAR |
-| user-module-starter-postgre | `user-module-starter-postgre-0.0.6-SNAPSHOT.jar` | Starter JAR |
-| user-module-starter-dynamodb | `user-module-starter-dynamodb-0.0.6-SNAPSHOT.jar` | Starter JAR |
-
-**Note**: Applications typically only depend on one of the starter modules, which transitively includes all required dependencies.
-
-### Deployment
-
-- **Artifact Repository**: AWS CodeArtifact
-- **Distribution**: Maven repository at com-comex-925199373191.d.codeartifact.us-east-2.amazonaws.com
-- Configured in `pom.xml` under `<distributionManagement>`
-
-### Docker Support
-
-- Docker configuration available in `docker/` directory
-- Can be containerized for microservices deployment
 
 **Last Updated**: October 2025
 **Maintained By**: Comex Development Team
