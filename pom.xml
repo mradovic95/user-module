@@ -11,7 +11,7 @@
 
 	<groupId>com.comex</groupId>
 	<artifactId>user-module</artifactId>
-	<version>0.0.6-SNAPSHOT</version>
+	<version>0.0.7-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>user-module</name>
 	<description>User Module - Multi-module authentication and user management</description>
