@@ -76,7 +76,7 @@ jobs:
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add pom.xml
+          git add pom.xml */pom.xml
           git commit -m "Update version from $CURRENT_VERSION to $NEXT_SNAPSHOT_VERSION"
           git push
 
