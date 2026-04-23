@@ -1,0 +1,92 @@
+@startuml ER Diagram
+' ER Diagram: ER Diagram
+
+!theme plain
+hide empty methods
+skinparam linetype ortho
+skinparam entity {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+
+entity "databasechangelog" as databasechangelog {
+  *id : varchar(255)
+  *author : varchar(255)
+  *filename : varchar(255)
+  *dateexecuted : timestamp
+  *orderexecuted : integer
+  *exectype : varchar(10)
+  md5sum : varchar(35)
+  description : varchar(255)
+  comments : varchar(255)
+  tag : varchar(255)
+  liquibase : varchar(20)
+  contexts : varchar(255)
+  labels : varchar(255)
+  deployment_id : varchar(10)
+}
+
+entity "databasechangeloglock" as databasechangeloglock {
+  *id : integer <<PK>>
+  --
+  *locked : boolean
+  lockgranted : timestamp
+  lockedby : varchar(255)
+}
+
+entity "notification" as notification {
+  *id : bigint <<PK>>
+  --
+  *type : varchar
+  *priority : varchar
+  *status : varchar
+  *send_to : varchar
+  *title : varchar
+  *body : varchar
+  template_id : varchar
+  parameters : jsonb
+  *created_at : timestamp
+}
+
+entity "permission" as permission {
+  *id : bigint <<PK>>
+  --
+  *created_at : timestamp
+  *name : varchar <<UK>>
+}
+
+entity "role" as role {
+  *id : bigint <<PK>>
+  --
+  *created_at : timestamp
+  *name : varchar <<UK>>
+}
+
+entity "roles_permissions" as roles_permissions {
+  *role_id : bigint <<PK>> <<FK>>
+  *permission_id : bigint <<PK>> <<FK>>
+}
+
+entity "user_table" as user_table {
+  *id : bigint <<PK>>
+  --
+  *created_at : timestamp
+  *username : varchar <<UK>>
+  password : varchar
+  *email : varchar <<UK>>
+  *status : varchar
+  verification_code : varchar
+}
+
+entity "users_roles" as users_roles {
+  *user_id : bigint <<PK>> <<FK>>
+  *role_id : bigint <<PK>> <<FK>>
+}
+
+roles_permissions }o--|| role : "role_id"
+roles_permissions }o--|| permission : "permission_id"
+users_roles }o--|| user_table : "user_id"
+users_roles }o--|| role : "role_id"
+
+@enduml
