@@ -154,9 +154,14 @@ The project follows **Hexagonal Architecture** principles with clear separation 
 **Purpose**: Auto-configuration, security setup, and bean wiring.
 
 - Auto-configuration classes (`UserConfiguration`)
-- Spring Security configuration (`SecurityConfiguration`) - provides the default stateless JWT `SecurityFilterChain`
-  (`@ConditionalOnMissingBean(SecurityFilterChain.class)`), which enables `oauth2Login()` only when a
-  `ClientRegistrationRepository` exists (i.e. Google client credentials are configured)
+- Spring Security configuration (`SecurityConfiguration`) - provides the default stateless JWT API
+  `SecurityFilterChain` (`userModuleSecurityFilterChain`), guarded by the module's own
+  `@ConditionalOnMissingApplicationSecurityFilterChain`: it backs off when the application defines a
+  `SecurityFilterChain`, but ignores the module's own chains (bean names prefixed `userModule`)
+- Google login chain (`OAuth2GoogleConfiguration.userModuleGoogleLoginSecurityFilterChain`) - separate,
+  session-based chain for `/oauth2/authorization/**` and `/login/oauth2/**`, registered via
+  `@ConditionalOnOAuth2ClientRegistration` whenever `spring.security.oauth2.client.registration.*` is set. It is
+  kept even when the application replaces the API chain
 - JWT authentication filter (`JwtAuthFilter`)
 - OAuth2 configuration (`OAuth2GoogleConfiguration`, `OAuth2LoginSuccessHandler`, `UserGoogleSpringAuthenticator`)
 - Security adapters (`UserGoogleSpringAuthenticator` - implements core ports)
@@ -460,7 +465,10 @@ All endpoints require Bearer authentication except public ones.
   return a JSON error with status 401/403.
 - **Public endpoints**: `POST /user`, `POST /user/login`, `GET /user/verify`, `/oauth2/**`, `/login/oauth2/**`, Swagger
 - **Protected endpoints**: Everything else; secured with JWT filter, JSON `401`/`403` responses
-- **Customization**: An application-defined `SecurityFilterChain` bean replaces the module's chain entirely
+- **Customization**: An application-defined `SecurityFilterChain` bean replaces the module's API chain
+  (`userModuleSecurityFilterChain`) entirely; the Google login chain is kept. After Google login,
+  `OAuth2LoginSuccessHandler` resumes a saved request (e.g. an authorization server's `/oauth2/authorize`) when one
+  exists in the session instead of issuing the module JWT
 
 ## Configuration Properties
 
@@ -823,10 +831,11 @@ Tests for **user-module-configuration** live in `user-module-configuration/src/t
 - Security adapters (`JwtAuthFilter`, success handler, authenticators) are unit-tested with Mockito and Spring's
   `MockHttpServletRequest`/`MockHttpServletResponse`; core services are mocked as ports
 - `SecurityConfigurationTest` uses `WebApplicationContextRunner` with the module auto-configurations plus Boot's
-  `ServletWebSecurityAutoConfiguration` and `OAuth2ClientAutoConfiguration`. It proves that the OAuth2 login filter
-  is present only when Google client properties are set, that the module chain backs off to an application-defined
-  `SecurityFilterChain`, and (via MockMvc with `springSecurity()`) that public endpoints pass, protected endpoints
-  return the JSON 401, and `/oauth2/authorization/google` redirects to Google
+  `ServletWebSecurityAutoConfiguration` and `OAuth2ClientAutoConfiguration`. It proves that the Google login chain
+  (with the OAuth2 login filter) exists only when Google client properties are set and is kept when the application
+  defines its own chain, that the API chain backs off to an application-defined `SecurityFilterChain`, and (via
+  MockMvc with `springSecurity()`) that public endpoints pass, protected endpoints return the JSON 401, and
+  `/oauth2/authorization/google` redirects to Google
 - Depends on the `user-module-core` test-jar, so install core first (see "Running Endpoint Tests")
 
 ### Endpoint Testing

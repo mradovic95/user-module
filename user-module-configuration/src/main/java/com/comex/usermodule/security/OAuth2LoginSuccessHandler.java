@@ -6,7 +6,9 @@ import java.io.IOException;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
-import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
+import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -14,16 +16,21 @@ import com.comex.usermodule.core.dto.LoginUserOAuth2Dto;
 import com.comex.usermodule.core.exception.UserException;
 import com.comex.usermodule.core.port.UserGoogleAuthenticator;
 
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Completes an OAuth2 login by exchanging the provider identity for a module JWT.
+ * Completes an OAuth2 login: validates the provider identity, provisions the user and hands control back.
  * <p>
- * Success: when a success redirect URL is configured the browser is redirected there with the JWT as a
- * {@code token} query parameter; otherwise the JWT is written to the response body as JSON.
+ * Saved request (the user was sent to Google by another chain, e.g. the authorization server's
+ * {@code /oauth2/authorize}): the browser is redirected back to that request and no module JWT is issued; the
+ * session now carries the authenticated user.
+ * <p>
+ * Otherwise a module JWT is issued: when a success redirect URL is configured the browser is redirected there with
+ * the JWT as a {@code token} query parameter; otherwise the JWT is written to the response body as JSON.
  * <p>
  * Rejection (missing email, unverified email, email domain not allowed): with a redirect URL configured the
  * browser is redirected there with an {@code error} query parameter; otherwise a JSON error body is written with
@@ -31,7 +38,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
+public class OAuth2LoginSuccessHandler extends SavedRequestAwareAuthenticationSuccessHandler {
 
 	static final String TOKEN_PARAMETER = "token";
 	static final String ERROR_PARAMETER = "error";
@@ -42,10 +49,18 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 	private final UserGoogleAuthenticator userGoogleAuthenticator;
 	private final String successRedirectUrl;
 
+	private RequestCache requestCache = new HttpSessionRequestCache();
+
+	@Override
+	public void setRequestCache(RequestCache requestCache) {
+		super.setRequestCache(requestCache);
+		this.requestCache = requestCache;
+	}
+
 	@Override
 	public void onAuthenticationSuccess(HttpServletRequest request,
 		HttpServletResponse response,
-		Authentication authentication) throws IOException {
+		Authentication authentication) throws IOException, ServletException {
 		OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
 		String email = oAuth2User.getAttribute("email");
 
@@ -73,6 +88,12 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 			}
 			reject(request, response, HttpServletResponse.SC_FORBIDDEN, ERROR_DOMAIN_NOT_ALLOWED,
 				"Email domain is not allowed to sign in");
+			return;
+		}
+
+		if (requestCache.getRequest(request, response) != null) {
+			log.debug("OAuth2 login completed for {}; resuming the saved request.", email);
+			super.onAuthenticationSuccess(request, response, authentication);
 			return;
 		}
 		log.debug("OAuth2 login completed for {}.", email);

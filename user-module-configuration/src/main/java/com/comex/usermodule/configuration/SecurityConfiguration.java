@@ -2,7 +2,6 @@ package com.comex.usermodule.configuration;
 
 import java.util.stream.Collectors;
 
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -21,7 +20,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -29,7 +27,6 @@ import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.port.UserAuthenticator;
 import com.comex.usermodule.core.service.JwtService;
 import com.comex.usermodule.core.service.UserService;
-import com.comex.usermodule.security.OAuth2LoginSuccessHandler;
 import com.comex.usermodule.security.UserSpringAuthenticator;
 import com.comex.usermodule.security.jwt.JwtAuthFilter;
 
@@ -41,22 +38,24 @@ import lombok.extern.slf4j.Slf4j;
 @AutoConfiguration
 public class SecurityConfiguration {
 
+	/** Bean name of the module's default stateless JWT API chain. */
+	public static final String API_CHAIN_BEAN_NAME = "userModuleSecurityFilterChain";
+
 	@Autowired
 	private UserProperties userProperties;
 
 	/**
-	 * Default stateless JWT security chain. Consumers can replace it entirely by defining their own
-	 * {@link SecurityFilterChain} bean. Google OAuth2 login is enabled only when Spring Boot has created a
-	 * {@link ClientRegistrationRepository}, which it does when
-	 * {@code spring.security.oauth2.client.registration.*} properties are present.
+	 * Default stateless JWT API chain. Consumers replace it by defining their own {@link SecurityFilterChain} bean;
+	 * the module's other chains (Google login, authorization server) are kept in that case.
+	 * <p>
+	 * Google OAuth2 login does not live here: {@link OAuth2GoogleConfiguration} registers a separate, session-based
+	 * chain for {@code /oauth2/authorization/**} and {@code /login/oauth2/**} when Google client properties are set.
 	 */
-	@ConditionalOnMissingBean(SecurityFilterChain.class)
-	@Bean
+	@ConditionalOnMissingApplicationSecurityFilterChain
+	@Bean(API_CHAIN_BEAN_NAME)
 	public SecurityFilterChain userModuleSecurityFilterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter,
-		AuthenticationProvider authenticationProvider,
-		ObjectProvider<ClientRegistrationRepository> clientRegistrationRepository,
-		ObjectProvider<OAuth2LoginSuccessHandler> oAuth2LoginSuccessHandler) throws Exception {
-		http
+		AuthenticationProvider authenticationProvider) throws Exception {
+		return http
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(auth -> auth
 				.requestMatchers(HttpMethod.POST, "/user", "/user/login").permitAll()
@@ -79,16 +78,8 @@ public class SecurityConfiguration {
 					response.setContentType("application/json");
 					response.getWriter().write("{\"error\": \"Access denied\"}");
 				})
-			);
-
-		if (clientRegistrationRepository.getIfAvailable() != null) {
-			log.info("OAuth2 client registrations found, enabling OAuth2 login.");
-			http.oauth2Login(oauth2 -> oauth2.successHandler(oAuth2LoginSuccessHandler.getObject()));
-		} else {
-			log.debug("No OAuth2 client registrations found, OAuth2 login is disabled.");
-		}
-
-		return http.build();
+			)
+			.build();
 	}
 
 	/**

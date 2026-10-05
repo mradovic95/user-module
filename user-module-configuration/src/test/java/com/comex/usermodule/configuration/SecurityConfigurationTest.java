@@ -32,6 +32,8 @@ class SecurityConfigurationTest {
 
 	private static final String GOOGLE_CLIENT_ID = "spring.security.oauth2.client.registration.google.client-id=test-client-id";
 	private static final String GOOGLE_CLIENT_SECRET = "spring.security.oauth2.client.registration.google.client-secret=test-client-secret";
+	private static final String API_CHAIN = SecurityConfiguration.API_CHAIN_BEAN_NAME;
+	private static final String GOOGLE_CHAIN = OAuth2GoogleConfiguration.GOOGLE_LOGIN_CHAIN_BEAN_NAME;
 
 	private final WebApplicationContextRunner sut = new WebApplicationContextRunner()
 		.withConfiguration(AutoConfigurations.of(
@@ -53,7 +55,8 @@ class SecurityConfigurationTest {
 		sut.run(context -> {
 			// THEN
 			assertThat(context).hasSingleBean(SecurityFilterChain.class);
-			assertThat(context).hasBean("userModuleSecurityFilterChain");
+			assertThat(context).hasBean(API_CHAIN);
+			assertThat(context).doesNotHaveBean(GOOGLE_CHAIN);
 			SecurityFilterChain chain = context.getBean(SecurityFilterChain.class);
 			assertThat(chain.getFilters()).anyMatch(JwtAuthFilter.class::isInstance);
 			assertThat(chain.getFilters()).noneMatch(OAuth2LoginAuthenticationFilter.class::isInstance);
@@ -70,19 +73,22 @@ class SecurityConfigurationTest {
 		// WHEN
 		runner.run(context -> {
 			// THEN
-			assertThat(context).hasSingleBean(SecurityFilterChain.class);
+			assertThat(context).getBeans(SecurityFilterChain.class).containsOnlyKeys(API_CHAIN, GOOGLE_CHAIN);
 			assertThat(context).hasSingleBean(OAuth2LoginSuccessHandler.class);
 			UserProperties.OAuth2Properties oauth2 = context.getBean(UserProperties.class).getOauth2();
 			assertThat(oauth2.getSuccessRedirectUrl()).isEqualTo("https://app.example.com/callback");
 			assertThat(oauth2.getAllowedDomains()).containsExactly("comex.com", "leanpay.com");
-			SecurityFilterChain chain = context.getBean(SecurityFilterChain.class);
-			assertThat(chain.getFilters()).anyMatch(JwtAuthFilter.class::isInstance);
-			assertThat(chain.getFilters()).anyMatch(OAuth2LoginAuthenticationFilter.class::isInstance);
+			SecurityFilterChain apiChain = context.getBean(API_CHAIN, SecurityFilterChain.class);
+			assertThat(apiChain.getFilters()).anyMatch(JwtAuthFilter.class::isInstance);
+			assertThat(apiChain.getFilters()).noneMatch(OAuth2LoginAuthenticationFilter.class::isInstance);
+			SecurityFilterChain googleChain = context.getBean(GOOGLE_CHAIN, SecurityFilterChain.class);
+			assertThat(googleChain.getFilters()).anyMatch(OAuth2LoginAuthenticationFilter.class::isInstance);
+			assertThat(googleChain.getFilters()).noneMatch(JwtAuthFilter.class::isInstance);
 		});
 	}
 
 	@Test
-	void testFilterChainBacksOffWhenApplicationDefinesItsOwn() {
+	void testApiChainBacksOffWhenApplicationDefinesItsOwn() {
 		// GIVEN
 		WebApplicationContextRunner runner = sut.withUserConfiguration(CustomSecurityFilterChainConfiguration.class);
 
@@ -91,9 +97,32 @@ class SecurityConfigurationTest {
 			// THEN
 			assertThat(context).hasSingleBean(SecurityFilterChain.class);
 			assertThat(context).hasBean("customSecurityFilterChain");
-			assertThat(context).doesNotHaveBean("userModuleSecurityFilterChain");
+			assertThat(context).doesNotHaveBean(API_CHAIN);
 			assertThat(context.getBean(SecurityFilterChain.class).getFilters())
 				.noneMatch(JwtAuthFilter.class::isInstance);
+		});
+	}
+
+	@Test
+	void testGoogleLoginChainKeptWhenApplicationDefinesItsOwn() {
+		// GIVEN
+		WebApplicationContextRunner runner = sut
+			.withPropertyValues(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+			.withUserConfiguration(CustomSecurityFilterChainConfiguration.class);
+
+		// WHEN
+		runner.run(context -> {
+			// THEN
+			assertThat(context).getBeans(SecurityFilterChain.class)
+				.containsOnlyKeys("customSecurityFilterChain", GOOGLE_CHAIN);
+			assertThat(context).doesNotHaveBean(API_CHAIN);
+			MockMvc mockMvc = MockMvcBuilders.webAppContextSetup((WebApplicationContext) context)
+				.apply(springSecurity())
+				.build();
+			mockMvc.perform(get("/oauth2/authorization/google"))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(result -> assertThat(result.getResponse().getRedirectedUrl())
+					.startsWith("https://accounts.google.com/o/oauth2/v2/auth"));
 		});
 	}
 

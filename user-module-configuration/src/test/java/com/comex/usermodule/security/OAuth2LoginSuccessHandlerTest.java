@@ -23,6 +23,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 
 import com.comex.usermodule.core.dto.LoginUserOAuth2Dto;
 import com.comex.usermodule.core.exception.UserException;
@@ -76,6 +77,32 @@ class OAuth2LoginSuccessHandlerTest {
 		// THEN
 		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_FOUND);
 		assertThat(response.getRedirectedUrl()).isEqualTo(REDIRECT_URL + "?token=" + TOKEN);
+		assertThat(response.getContentAsString()).isEmpty();
+	}
+
+	@ParameterizedTest
+	@NullSource
+	@ValueSource(strings = REDIRECT_URL)
+	void testOnAuthenticationSuccessResumesSavedRequest(String redirectUrl) throws Exception {
+		// GIVEN
+		sut = new OAuth2LoginSuccessHandler(userGoogleAuthenticator, redirectUrl);
+		MockHttpServletRequest authorizeRequest = new MockHttpServletRequest("GET", "/oauth2/authorize");
+		authorizeRequest.setQueryString("client_id=claude&response_type=code");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		new HttpSessionRequestCache().saveRequest(authorizeRequest, response);
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setSession(authorizeRequest.getSession());
+		when(userGoogleAuthenticator.authenticate(new LoginUserOAuth2Dto(DEFAULT_EMAIL, DEFAULT_OAUTH2_NAME)))
+			.thenReturn(TOKEN);
+
+		// WHEN
+		sut.onAuthenticationSuccess(request, response, authentication(DEFAULT_EMAIL, DEFAULT_OAUTH2_NAME, true));
+
+		// THEN
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_FOUND);
+		assertThat(response.getRedirectedUrl())
+			.startsWith("http://localhost/oauth2/authorize?client_id=claude&response_type=code")
+			.doesNotContain(TOKEN);
 		assertThat(response.getContentAsString()).isEmpty();
 	}
 
