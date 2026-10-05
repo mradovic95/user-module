@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+		 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.comex</groupId>
+		<artifactId>user-module</artifactId>
+		<version>0.0.8-SNAPSHOT</version>
+	</parent>
+
+	<artifactId>user-module-authorization-server</artifactId>
+	<name>user-module-authorization-server</name>
+	<description>OAuth 2.1 authorization server for MCP clients (Dynamic Client Registration, PKCE, resource
+		indicators) that delegates user login to the module's Google OAuth2 login</description>
+
+	<dependencies>
+		<!-- Module wiring, Google login chain, UserService -->
+		<dependency>
+			<groupId>com.comex</groupId>
+			<artifactId>user-module-configuration</artifactId>
+		</dependency>
+
+		<!-- Spring Authorization Server (part of Spring Security 7) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-authorization-server</artifactId>
+		</dependency>
+
+		<!-- JwtDecoder / JwtAuthenticationConverter for applications protecting their resources -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+		</dependency>
+
+		<!-- MCP specifics on top of Spring Authorization Server: open DCR endpoint, aud from the resource parameter -->
+		<dependency>
+			<groupId>org.springaicommunity</groupId>
+			<artifactId>mcp-authorization-server</artifactId>
+		</dependency>
+
+		<!-- JDBC persistence of registered clients / authorizations; optional, in-memory fallback otherwise -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jdbc</artifactId>
+			<optional>true</optional>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-autoconfigure</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-configuration-processor</artifactId>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+		</dependency>
+
+		<!-- Test dependencies -->
+		<dependency>
+			<groupId>com.comex</groupId>
+			<artifactId>user-module-core</artifactId>
+			<version>${project.version}</version>
+			<type>test-jar</type>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webmvc-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Liquibase changelog with the authorization server tables, exercised against a real PostgreSQL -->
+		<dependency>
+			<groupId>com.comex</groupId>
+			<artifactId>user-module-infrastructure-postgre</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-liquibase</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+</project>

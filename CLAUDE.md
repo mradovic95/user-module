@@ -51,7 +51,7 @@ role-based access control.
 
 ## Project Structure - Multi-Module Maven
 
-The user-module is organized as a **multi-module Maven project** with 7 distinct modules, each serving a specific purpose:
+The user-module is organized as a **multi-module Maven project** with 8 distinct modules, each serving a specific purpose:
 
 ```
 user-module (parent pom)
@@ -60,6 +60,7 @@ user-module (parent pom)
 ├── user-module-infrastructure-dynamodb   # DynamoDB persistence adapter
 ├── user-module-endpoint                  # REST controllers and web models
 ├── user-module-configuration             # Auto-configuration and security
+├── user-module-authorization-server      # Optional OAuth 2.1 authorization server for MCP clients
 ├── user-module-starter-postgre           # PostgreSQL starter dependency
 └── user-module-starter-dynamodb          # DynamoDB starter dependency
 ```
@@ -168,6 +169,43 @@ The project follows **Hexagonal Architecture** principles with clear separation 
 - Configuration properties (`UserProperties`)
 - Bean definitions and conditional configurations
 
+#### 6. **Authorization Server Module** (`user-module-authorization-server`, optional)
+
+**Purpose**: OAuth 2.1 authorization server so MCP clients (Claude Code, claude.ai connectors, MCP Inspector) can
+obtain tokens through the standard MCP flow, with the human login delegated to the Google login chain. Added by
+applications explicitly (not pulled in by the starters) and inert until `user.oauth2.authorization-server.enabled=true`.
+Built on Spring Authorization Server (part of Spring Security 7) plus
+`org.springaicommunity:mcp-authorization-server` (open Dynamic Client Registration, `resource` parameter → `aud`).
+
+- `UserModuleAuthorizationServerAutoConfiguration` (registered through `AutoConfiguration.imports`, ordered before
+  Boot's authorization-server auto-configurations and after the JDBC ones) - chain
+  `userModuleAuthorizationServerSecurityFilterChain` (`HIGHEST_PRECEDENCE + 10`, session-based) for the OAuth2
+  endpoints, `/.well-known/openid-configuration` and the protected resource metadata; unauthenticated HTML requests
+  are sent to `login-path` (Google), and the saved request is resumed by `OAuth2LoginSuccessHandler`
+- `AuthorizationServerProperties` (`user.oauth2.authorization-server.*`): issuer, resources, scopes, allowed
+  redirect hosts, token TTLs, consent, login path, signing key (`RsaJwkFactory`: PKCS#8 PEM or generated)
+- `DcrClientRegistrationValidator` - redirect URIs required, hosts allow-listed (loopback: any port/http, others
+  https); tolerates a `scope` in the registration unlike Spring's default validator
+- `UserModuleRegisteredClientConverter` - DCR clients get PKCE, configured consent/TTLs, rotated refresh tokens, the
+  `refresh_token` grant and the advertised scopes
+- `PublicClientRefreshTokenGenerator` + `userModuleTokenGenerator` - Spring refuses refresh tokens to public clients
+  on the code grant; MCP clients need them, so the module supplies its own generator chain (JWT + refresh)
+- `PublicClientRefreshTokenAuthenticationConverter` / `...Provider` - Spring authenticates public clients only on
+  the PKCE code exchange; these accept `client_id`-only `refresh_token` requests (provider inserted first so
+  Spring's PKCE provider does not demand a `code_verifier`)
+- `UserModuleAccessTokenCustomizer` - access tokens carry `sub`=email, `email`, `name`, `roles` (comma-joined
+  authorities from `UserService`, same shape as `JwtService`) and fall back to the configured resources as `aud`
+- `resource` package, for applications protecting an endpoint: `ProtectedResources` (RFC 9728 documents, audience
+  matching), `ProtectedResourceMetadataFilter` (serves `/.well-known/oauth-protected-resource[/<path>]`, placed
+  right after `CorsFilter` so it precedes Spring Security's own metadata filter), `BearerResourceMetadataEntryPoint`
+  (`401` + `WWW-Authenticate: Bearer resource_metadata="…"`), `ResourceAudienceValidator`; beans
+  `userModuleAuthorizationServerJwtDecoder`, `userModuleJwtAuthenticationConverter`,
+  `userModuleBearerResourceMetadataEntryPoint`
+- Persistence: `JdbcRegisteredClientRepository`/`JdbcOAuth2AuthorizationService`/`JdbcOAuth2AuthorizationConsentService`
+  when a `JdbcOperations` bean exists (tables from `2_create-oauth2-authorization-server-tables.yml` in the
+  PostgreSQL infrastructure module), in-memory otherwise (with an unusable placeholder client, because Spring's
+  in-memory repository refuses to start empty)
+
 ### Auto-Configuration Pattern
 
 The module uses Spring Boot's **Auto-Configuration** mechanism to be easily integrated:
@@ -269,6 +307,24 @@ user-module/                                    # Parent Maven module (aggregato
 │           ├── jwt/JwtAuthFilter.java
 │           ├── UserGoogleSpringAuthenticator.java
 │           └── OAuth2LoginSuccessHandler.java
+│
+├── user-module-authorization-server/          # Optional OAuth 2.1 authorization server (MCP)
+│   ├── pom.xml
+│   └── src/main/java/com/comex/usermodule/authorizationserver/
+│       ├── UserModuleAuthorizationServerAutoConfiguration.java
+│       ├── AuthorizationServerProperties.java
+│       ├── DcrClientRegistrationValidator.java
+│       ├── UserModuleRegisteredClientConverter.java
+│       ├── UserModuleAccessTokenCustomizer.java
+│       ├── PublicClientRefreshTokenGenerator.java
+│       ├── PublicClientRefreshTokenAuthenticationConverter.java
+│       ├── PublicClientRefreshTokenAuthenticationProvider.java
+│       ├── RsaJwkFactory.java
+│       └── resource/                           # Helpers for applications protecting a resource
+│           ├── ProtectedResources.java
+│           ├── ProtectedResourceMetadataFilter.java
+│           ├── BearerResourceMetadataEntryPoint.java
+│           └── ResourceAudienceValidator.java
 │
 ├── user-module-starter-postgre/               # PostgreSQL starter
 │   ├── pom.xml                                 # Aggregates: configuration, endpoint, infra-postgre
@@ -469,6 +525,10 @@ All endpoints require Bearer authentication except public ones.
   (`userModuleSecurityFilterChain`) entirely; the Google login chain is kept. After Google login,
   `OAuth2LoginSuccessHandler` resumes a saved request (e.g. an authorization server's `/oauth2/authorize`) when one
   exists in the session instead of issuing the module JWT
+- **MCP clients**: with `user-module-authorization-server` enabled, `/oauth2/authorize`, `/oauth2/token`,
+  `/oauth2/register`, `/oauth2/jwks`, `/.well-known/oauth-authorization-server` and
+  `/.well-known/oauth-protected-resource[/<path>]` are served by the authorization server chain; the application
+  protects its MCP endpoint with the module's `JwtDecoder`, converter and entry point beans (see README)
 
 ## Configuration Properties
 
@@ -490,6 +550,15 @@ Configured via `@ConfigurationProperties` with prefix `user`:
   `token` query parameter. When blank the JWT is returned as JSON in the response body.
 - **oauth2.allowed-domains**: Optional list of email domains allowed to sign in with Google (case-insensitive, exact
   match). Empty or unset means every Google account is accepted.
+
+### Authorization Server Properties (`AuthorizationServerProperties`, module `user-module-authorization-server`)
+
+Prefix `user.oauth2.authorization-server`:
+- **enabled** (default `false`), **issuer** (public base URL, required), **resources** (protected resource paths,
+  e.g. `/mcp`), **scopes-supported** (empty = no consent screen), **allowed-redirect-hosts** (default
+  `localhost, 127.0.0.1, claude.ai`), **access-token-ttl** (`1h`), **refresh-token-ttl** (`30d`),
+  **consent-required** (`true`), **login-path** (`/oauth2/authorization/google`), **jwk.private-key-pem** (PKCS#8;
+  blank = ephemeral key), **jwk.kid**
 
 ## Development Guidelines
 
@@ -837,6 +906,35 @@ Tests for **user-module-configuration** live in `user-module-configuration/src/t
   MockMvc with `springSecurity()`) that public endpoints pass, protected endpoints return the JSON 401, and
   `/oauth2/authorization/google` redirects to Google
 - Depends on the `user-module-core` test-jar, so install core first (see "Running Endpoint Tests")
+
+### Authorization Server Module Testing
+
+Tests for **user-module-authorization-server** live in
+`user-module-authorization-server/src/test/java/com/comex/usermodule/authorizationserver/`:
+
+```
+├── UserModuleAuthorizationServerAutoConfigurationTest.java  # WebApplicationContextRunner + MockMvc, full OAuth flow
+├── UserModuleAccessTokenCustomizerTest.java                 # Claims shaping (sub/email/roles/aud)
+├── JdbcPersistenceIntegrationTest.java                      # Testcontainers PostgreSQL + Liquibase + JDBC services
+└── resource/
+    ├── ProtectedResourcesTest.java
+    ├── ProtectedResourceMetadataFilterTest.java
+    └── BearerResourceMetadataEntryPointTest.java
+```
+
+**Key Principles:**
+- `UserModuleAuthorizationServerAutoConfigurationTest` runs the module next to Boot's security, OAuth2 client and
+  authorization-server auto-configurations and drives the real protocol with MockMvc: metadata documents, Dynamic
+  Client Registration (allowed vs rejected redirect hosts, tolerated `scope`), unauthenticated `/oauth2/authorize`
+  redirecting to Google, the authorization code + PKCE exchange as a Google-authenticated user, token claims,
+  refresh-token rotation, loopback port wildcard and audience rejection by the provided `JwtDecoder`
+- Spring's authorization endpoint reads GET parameters from the query string, so MockMvc requests to
+  `/oauth2/authorize` must use `queryParam`, not `param`
+- `JdbcPersistenceIntegrationTest` applies `user-master.yml` to a real PostgreSQL (this is the only test that runs
+  the Liquibase changelog) and round-trips a client, an authorization with an `OAuth2AuthenticationToken` principal
+  and a consent through the JDBC implementations
+- Depends on the `user-module-core` test-jar and on `user-module-infrastructure-postgre` (changelog), so install
+  those first
 
 ### Endpoint Testing
 

@@ -22,6 +22,7 @@
 		<module>user-module-infrastructure-dynamodb</module>
 		<module>user-module-endpoint</module>
 		<module>user-module-configuration</module>
+		<module>user-module-authorization-server</module>
 		<module>user-module-starter-dynamodb</module>
 		<module>user-module-starter-postgre</module>
 	</modules>
@@ -31,6 +32,8 @@
 		<org.springdoc.springdoc-openapi-starter-webmvc-ui.version>3.1.1</org.springdoc.springdoc-openapi-starter-webmvc-ui.version>
 		<io.jsonwebtoken.version>0.13.0</io.jsonwebtoken.version>
 		<software.amazon.awssdk.version>2.30.2</software.amazon.awssdk.version>
+		<!-- Spring AI community MCP security (0.1.x targets the Spring AI 2.0 / Spring Boot 4 line) -->
+		<org.springaicommunity.mcp-security.version>0.1.14</org.springaicommunity.mcp-security.version>
 	</properties>
 
 	<distributionManagement>
@@ -71,6 +74,18 @@
 				<groupId>com.comex</groupId>
 				<artifactId>user-module-configuration</artifactId>
 				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.comex</groupId>
+				<artifactId>user-module-authorization-server</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+
+			<!-- MCP authorization server support (Dynamic Client Registration, resource indicators) -->
+			<dependency>
+				<groupId>org.springaicommunity</groupId>
+				<artifactId>mcp-authorization-server</artifactId>
+				<version>${org.springaicommunity.mcp-security.version}</version>
 			</dependency>
 
 			<!-- JWT -->

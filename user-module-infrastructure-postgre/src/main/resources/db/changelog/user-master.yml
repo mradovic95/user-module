@@ -6,6 +6,9 @@ databaseChangeLog:
       file: 1_create-role-and-permission-tables.yml
       relativeToChangelogFile: true
   - include:
+      file: 2_create-oauth2-authorization-server-tables.yml
+      relativeToChangelogFile: true
+  - include:
       file: insert-initial-roles.yml
       relativeToChangelogFile: true
   - include:
