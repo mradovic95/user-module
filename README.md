@@ -65,7 +65,8 @@ for both PostgreSQL and DynamoDB persistence strategies.
 
 ## Architecture
 
-The project is organized as a **multi-module Maven project** with 7 modules following **Hexagonal Architecture** (Ports & Adapters):
+The project is organized as a **multi-module Maven project** with 8 modules (7 plus the optional
+`user-module-authorization-server`) following **Hexagonal Architecture** (Ports & Adapters):
 
 ```
 user-module (parent)
@@ -328,9 +329,10 @@ HTTP status. Codes: `email_missing` (401), `email_not_verified` (401), `domain_n
 
 #### Customizing Security
 
-Define your own `SecurityFilterChain` bean and the module's chain backs off completely
-(`@ConditionalOnMissingBean(SecurityFilterChain.class)`). The `JwtAuthFilter`, `AuthenticationProvider` and
-`OAuth2LoginSuccessHandler` beans remain available so you can reuse them in your own chain.
+Define your own `SecurityFilterChain` bean and the module's API chain (`userModuleSecurityFilterChain`) backs
+off; the module's own chains (Google login, authorization server) are kept. The `JwtAuthFilter`,
+`AuthenticationProvider` and `OAuth2LoginSuccessHandler` beans remain available so you can reuse them in your
+own chain (see "Extend Security Configuration" under Customization).
 
 ### Step 6: Include Database Migrations (PostgreSQL only)
 
