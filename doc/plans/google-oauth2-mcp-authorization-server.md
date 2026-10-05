@@ -364,3 +364,38 @@ Repo: `/Users/mihailoradovic/my_projects/easy-eval-infrastructure`.
   registered after `SecurityConfiguration`'s main chain so its `@ConditionalOnMissingBean` keeps
   working; covered by `SecurityConfigurationTest`.
 - Sessions on the EC2 single instance are in-memory; fine for one container, revisit if scaled out.
+
+---
+
+## Status (2026-10-05)
+
+Implemented and committed:
+
+- **Phase 1** — user-module `bca16c9`: Google login in its own chain, saved-request-aware success handler.
+- **Phase 2** — user-module `c9aac7b`: `user-module-authorization-server` module, Liquibase tables, docs; README
+  is now tracked (the `.gitignore` entry `Readme.md` had hidden it). Full build green, 43 new tests.
+- **Phase 3** — easy-eval `dea81a9` + `b0e9eb4`: user-module `0.0.8-SNAPSHOT`, `/mcp` chain, Google + authorization
+  server configuration, `McpSecurityIntegrationTest`, deploy workflow secrets and optional Caddy front door.
+- **Phase 4** — easy-eval-frontend `49ed6a5`: "Continue with Google", `/auth/callback`.
+- **Phase 5** — easy-eval-infrastructure `64a6748`: README (secrets, HTTPS front door). No Terraform change was
+  needed: the EC2 security group already opens 80/443.
+
+Deviations from the plan worth knowing:
+
+- Spring Security 7.1 withholds refresh tokens from public clients and only authenticates them on the PKCE code
+  exchange; the module adds `PublicClientRefreshTokenGenerator` and a client-id-only converter/provider for the
+  refresh grant.
+- Spring Security 7.1's resource-server DSL auto-registers its own protected-resource-metadata filter; the
+  module's filter is anchored right after `CorsFilter` so it answers first.
+- easy-eval now requires `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` to start (Boot rejects an empty client
+  registration).
+
+Left for the operator:
+
+1. Release user-module `0.0.8` to CodeArtifact (`build-and-push.yml`); easy-eval's CI cannot resolve the SNAPSHOT.
+2. Google Cloud console: add `http://localhost:8081/login/oauth2/code/google` and
+   `https://<EASY_EVAL_DOMAIN>/login/oauth2/code/google` to the OAuth client's redirect URIs.
+3. Choose a DNS name for the backend, point its A record at the EIP, set the new GitHub secrets
+   (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EASY_EVAL_DOMAIN`, `EASY_EVAL_PUBLIC_URL`, `EASY_EVAL_FRONTEND_URL`,
+   `EASY_EVAL_OAUTH2_SIGNING_KEY`, optionally `EASY_EVAL_GOOGLE_ALLOWED_DOMAINS`) and deploy.
+4. Run the manual verification above (MCP Inspector, Claude Code `/mcp` → Authenticate, claude.ai custom connector).
