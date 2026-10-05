@@ -3,6 +3,7 @@ package com.comex.usermodule.core.service;
 import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.domain.UserStatus;
 import com.comex.usermodule.core.dto.CreateUserDto;
+import com.comex.usermodule.core.dto.LoginUserOAuth2Dto;
 import com.comex.usermodule.core.event.UserCreatedEvent;
 import com.comex.usermodule.core.mapper.UserMapper;
 import com.comex.usermodule.core.port.EventPublisher;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -90,6 +92,33 @@ class UserServiceTest {
 			new Object[]{false, UserStatus.VERIFIED},
 			new Object[]{true, UserStatus.CREATED}
 		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = {true, false})
+	void testCreateOAuth2User(boolean verificationRequired) {
+		// GIVEN
+		LoginUserOAuth2Dto loginUserOAuth2Dto = loginUserOAuth2Dto();
+
+		when(passwordEncoder.encode(any())).thenReturn(DEFAULT_ENCODED_PASSWORD);
+		when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		sut = new UserService(verificationRequired, userRepository, eventPublisher, userMapper);
+
+		// WHEN
+		User result = sut.createOAuth2User(loginUserOAuth2Dto);
+
+		// THEN
+		assertThat(result.getEmail()).isEqualTo(DEFAULT_EMAIL);
+		assertThat(result.getUsername()).isEqualTo(DEFAULT_EMAIL);
+		assertThat(result.getPassword()).isEqualTo(DEFAULT_ENCODED_PASSWORD);
+		assertThat(result.getStatus()).isEqualTo(UserStatus.VERIFIED);
+		assertThat(result.getRoles()).extracting("name").containsExactly("ROLE_USER");
+
+		verify(userRepository).save(userCaptor.capture());
+		assertThat(userCaptor.getValue().getStatus()).isEqualTo(UserStatus.VERIFIED);
+
+		verify(eventPublisher).publish(eventCaptor.capture());
+		assertThat(eventCaptor.getValue().getUsername()).isEqualTo(DEFAULT_EMAIL);
 	}
 
 	@Test

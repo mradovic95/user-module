@@ -2,25 +2,26 @@
 
 ## Project Overview
 
-**user-module** is a Spring Boot 3.4.3-based reusable authentication and user management module designed to be
+**user-module** is a Spring Boot 4.1.1-based reusable authentication and user management module designed to be
 integrated into larger applications. It provides JWT-based authentication, OAuth2 (Google) login, user verification, and
 role-based access control.
 
 **Type**: Multi-Module Maven Project - Reusable Spring Boot Auto-Configuration Library
-**Java Version**: 21
+**Java Version**: 25
 **Build Tool**: Maven (Multi-Module)
 **Package**: com.comex.usermodule
 
 ## Development Environment
 
-**Java:** This project uses **Java 21** managed via SDKMAN. Before running Maven commands, set:
-`export JAVA_HOME=/Users/mihailoradovic/.sdkman/candidates/java/current`
+**Java:** This project uses **Java 25** managed via SDKMAN (see `.sdkmanrc`). Before running Maven commands, set:
+`export JAVA_HOME=/Users/mihailoradovic/.sdkman/candidates/java/25.0.1-tem`
+(or run `sdk env` in the project root).
 
 ## Technology Stack
 
 ### Core Framework
 
-- **Spring Boot 3.4.3** - Main framework
+- **Spring Boot 4.1.1** - Main framework (Spring Framework 7, Spring Security 7, Hibernate 7, Jackson 3)
 - **Spring Security** - Authentication and authorization
 - **Spring Data JPA** - Database access layer
 - **Spring OAuth2 Client** - OAuth2 integration
@@ -30,31 +31,23 @@ role-based access control.
 - **PostgreSQL** - Relational database option (default)
 - **DynamoDB** - NoSQL database option (alternative)
 - **Liquibase** - Database migration management (PostgreSQL only)
-- **Hibernate Types 60** - Enhanced Hibernate type support (PostgreSQL only)
 - **AWS DynamoDB SDK 2.30.2** - DynamoDB client and enhanced client
 
 ### Security & Authentication
 
-- **JWT (jjwt 0.12.6)** - Token-based authentication
+- **JWT (jjwt 0.13.0)** - Token-based authentication
 - **BCrypt** - Password encryption
 - **OAuth2** - Google authentication integration
 
-### External Services
-
-- **AWS SES** - Email service (user verification)
-- **AWS SNS** - SMS service
-- **Thymeleaf** - Email template rendering
-
 ### Documentation & Testing
 
-- **SpringDoc OpenAPI 2.8.1** - API documentation (Swagger)
-- **JUnit 5** - Testing framework
-- **Testcontainers 1.20.1** - Integration testing with PostgreSQL
+- **SpringDoc OpenAPI 3.1.1** - API documentation (Swagger)
+- **JUnit 6** - Testing framework
+- **Testcontainers 2.0.5** - Integration testing with PostgreSQL and LocalStack (DynamoDB)
 
 ### Utilities
 
-- **Lombok 1.18.32** - Boilerplate code reduction
-- **Resilience4j 2.3.0** - Retry mechanisms
+- **Lombok 1.18.46** - Boilerplate code reduction (version managed by the Spring Boot BOM)
 
 ## Project Structure - Multi-Module Maven
 
@@ -161,9 +154,11 @@ The project follows **Hexagonal Architecture** principles with clear separation 
 **Purpose**: Auto-configuration, security setup, and bean wiring.
 
 - Auto-configuration classes (`UserConfiguration`)
-- Spring Security configuration (`SecurityConfiguration`)
+- Spring Security configuration (`SecurityConfiguration`) - provides the default stateless JWT `SecurityFilterChain`
+  (`@ConditionalOnMissingBean(SecurityFilterChain.class)`), which enables `oauth2Login()` only when a
+  `ClientRegistrationRepository` exists (i.e. Google client credentials are configured)
 - JWT authentication filter (`JwtAuthFilter`)
-- OAuth2 configuration (`OAuth2GoogleConfiguration`, `OAuth2LoginSuccessHandler`)
+- OAuth2 configuration (`OAuth2GoogleConfiguration`, `OAuth2LoginSuccessHandler`, `UserGoogleSpringAuthenticator`)
 - Security adapters (`UserGoogleSpringAuthenticator` - implements core ports)
 - Configuration properties (`UserProperties`)
 - Bean definitions and conditional configurations
@@ -455,9 +450,17 @@ All endpoints require Bearer authentication except public ones.
 ### Security Configuration
 
 - **JWT Authentication**: Bearer token in Authorization header
-- **OAuth2 Google Login**: Configured at `/oauth2/authorization/google`
-- **Public endpoints**: User creation, login, verification
-- **Protected endpoints**: Secured with JWT filter
+- **OAuth2 Google Login**: Entry point `/oauth2/authorization/google`; active only when
+  `spring.security.oauth2.client.registration.google.client-id/client-secret` are set. On success the module JWT is
+  either appended as `?token=` to `user.oauth2.success-redirect-url` or, when that property is blank, written as
+  `{"token": ...}` to the response body. Google users are created via `UserService.createOAuth2User` and are always
+  `VERIFIED`. `UserGoogleSpringAuthenticator` enforces `user.oauth2.allowed-domains` (empty list = anyone may sign
+  in) and throws `UserException(OAUTH2_EMAIL_DOMAIN_NOT_ALLOWED)` otherwise; the success handler also rejects
+  accounts whose `email_verified` claim is `false`. Rejections redirect to `success-redirect-url?error=<code>` or
+  return a JSON error with status 401/403.
+- **Public endpoints**: `POST /user`, `POST /user/login`, `GET /user/verify`, `/oauth2/**`, `/login/oauth2/**`, Swagger
+- **Protected endpoints**: Everything else; secured with JWT filter, JSON `401`/`403` responses
+- **Customization**: An application-defined `SecurityFilterChain` bean replaces the module's chain entirely
 
 ## Configuration Properties
 
@@ -475,6 +478,10 @@ Configured via `@ConfigurationProperties` with prefix `user`:
 - **dynamodb.table-name**: DynamoDB table name (default: users)
 - **dynamodb.region**: AWS region for DynamoDB
 - **dynamodb.endpoint**: Optional endpoint for local testing
+- **oauth2.success-redirect-url**: Optional URL the browser is redirected to after Google login, with the JWT as a
+  `token` query parameter. When blank the JWT is returned as JSON in the response body.
+- **oauth2.allowed-domains**: Optional list of email domains allowed to sign in with Google (case-insensitive, exact
+  match). Empty or unset means every Google account is accepted.
 
 ## Development Guidelines
 
@@ -518,7 +525,7 @@ Applications choose persistence strategy by selecting the appropriate **starter 
 <dependency>
     <groupId>com.comex</groupId>
     <artifactId>user-module-starter-postgre</artifactId>
-    <version>0.0.6-SNAPSHOT</version>
+    <version>0.0.8-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -527,7 +534,7 @@ Applications choose persistence strategy by selecting the appropriate **starter 
 <dependency>
     <groupId>com.comex</groupId>
     <artifactId>user-module-starter-dynamodb</artifactId>
-    <version>0.0.6-SNAPSHOT</version>
+    <version>0.0.8-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -586,7 +593,7 @@ This allows endpoint and infrastructure tests to use `UserTestInventory` for cre
 
 ### Testing Tools
 
-- **JUnit 5** - Test framework with parameterized test support
+- **JUnit 6** - Test framework with parameterized test support
 - **Mockito** - Mocking framework for external dependencies (ports)
 - **AssertJ** - Fluent assertion library
 - **Spring Boot Test** - Integration testing support
@@ -798,6 +805,30 @@ src/test/java/com/comex/usermodule/infrastructure/persistence/
 - **Lightweight context loading** - Only persistence beans loaded, no OAuth2/Security/Web layers
 - Uses `@AfterEach` cleanup to ensure test isolation
 
+### Configuration Module Testing
+
+Tests for **user-module-configuration** live in `user-module-configuration/src/test/java/com/comex/usermodule/`:
+
+```
+├── configuration/
+│   └── SecurityConfigurationTest.java       # WebApplicationContextRunner tests for the security chain
+└── security/
+    ├── OAuth2LoginSuccessHandlerTest.java   # Redirect vs JSON token hand-off, missing email
+    ├── UserGoogleSpringAuthenticatorTest.java
+    ├── UserSpringAuthenticatorTest.java
+    └── jwt/JwtAuthFilterTest.java
+```
+
+**Key Principles:**
+- Security adapters (`JwtAuthFilter`, success handler, authenticators) are unit-tested with Mockito and Spring's
+  `MockHttpServletRequest`/`MockHttpServletResponse`; core services are mocked as ports
+- `SecurityConfigurationTest` uses `WebApplicationContextRunner` with the module auto-configurations plus Boot's
+  `ServletWebSecurityAutoConfiguration` and `OAuth2ClientAutoConfiguration`. It proves that the OAuth2 login filter
+  is present only when Google client properties are set, that the module chain backs off to an application-defined
+  `SecurityFilterChain`, and (via MockMvc with `springSecurity()`) that public endpoints pass, protected endpoints
+  return the JSON 401, and `/oauth2/authorization/google` redirects to Google
+- Depends on the `user-module-core` test-jar, so install core first (see "Running Endpoint Tests")
+
 ### Endpoint Testing
 
 Testing strategies for the **user-module-endpoint** module with `@WebMvcTest`.
@@ -837,10 +868,10 @@ This configuration:
 #### UserControllerTest
 
 **Setup:**
-- Uses `@WebMvcTest(controllers = UserController.class)` for controller slice testing
-- Excludes `SecurityAutoConfiguration` and `OAuth2ClientAutoConfiguration` to isolate controller logic
+- Uses `@WebMvcTest(controllers = UserController.class)` for controller slice testing (the endpoint module has no
+  Spring Security dependency, so no security auto-configuration needs to be excluded)
 - Uses `@Import({UserController.class, UserWebMapper.class})` to import required beans
-- Mocks service dependencies with `@MockBean` (UserService, UserAuthenticationService, UserVerificationService)
+- Mocks service dependencies with `@MockitoBean` (UserService, UserAuthenticationService, UserVerificationService)
 - Autowires MockMvc as `sut` (system under test)
 
 **Test Methods (8 tests):**
@@ -875,5 +906,5 @@ This configuration:
 - The test-jar artifact must be available in your local Maven repository
 - Running `mvn install` on core module creates and installs the test-jar
 
-**Last Updated**: October 2025
+**Last Updated**: October 2026
 **Maintained By**: Comex Development Team

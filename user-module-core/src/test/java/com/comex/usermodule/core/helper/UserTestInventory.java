@@ -5,6 +5,7 @@ import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.domain.UserStatus;
 import com.comex.usermodule.core.dto.CreateUserDto;
 import com.comex.usermodule.core.dto.LoginUserDto;
+import com.comex.usermodule.core.dto.LoginUserOAuth2Dto;
 
 import java.time.Instant;
 import java.util.Set;
@@ -22,6 +23,7 @@ public class UserTestInventory {
 	public static final String DEFAULT_PASSWORD = "password123";
 	public static final String DEFAULT_ENCODED_PASSWORD = "$2a$10$encodedPassword";
 	public static final String DEFAULT_VERIFICATION_CODE = "ABC123";
+	public static final String DEFAULT_OAUTH2_NAME = "Test User";
 
 	// User Factory Methods
 
@@ -97,6 +99,14 @@ public class UserTestInventory {
 
 	public static LoginUserDto loginUserDto(String email, String password) {
 		return new LoginUserDto(email, password);
+	}
+
+	public static LoginUserOAuth2Dto loginUserOAuth2Dto() {
+		return new LoginUserOAuth2Dto(DEFAULT_EMAIL, DEFAULT_OAUTH2_NAME);
+	}
+
+	public static LoginUserOAuth2Dto loginUserOAuth2Dto(String email, String name) {
+		return new LoginUserOAuth2Dto(email, name);
 	}
 
 	private UserTestInventory() {

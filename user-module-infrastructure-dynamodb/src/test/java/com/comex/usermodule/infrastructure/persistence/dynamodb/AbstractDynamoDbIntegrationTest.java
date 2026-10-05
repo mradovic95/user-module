@@ -6,9 +6,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
-import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.localstack.LocalStackContainer;
 import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -24,20 +24,20 @@ public abstract class AbstractDynamoDbIntegrationTest {
     @Container
     static LocalStackContainer localstack = new LocalStackContainer(
             DockerImageName.parse("localstack/localstack:3.0"))
-            .withServices(LocalStackContainer.Service.DYNAMODB);
+            .withServices("dynamodb");
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("user.persistence.type", () -> "dynamodb");
         registry.add("user.dynamodb.table-name", () -> "users");
         registry.add("user.dynamodb.region", () -> localstack.getRegion());
-        registry.add("user.dynamodb.endpoint", () -> localstack.getEndpointOverride(LocalStackContainer.Service.DYNAMODB).toString());
+        registry.add("user.dynamodb.endpoint", () -> localstack.getEndpoint().toString());
     }
 
     @BeforeAll
     static void setupDynamoDB() {
         DynamoDbClient dynamoDbClient = DynamoDbClient.builder()
-                .endpointOverride(localstack.getEndpointOverride(LocalStackContainer.Service.DYNAMODB))
+                .endpointOverride(localstack.getEndpoint())
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(localstack.getAccessKey(), localstack.getSecretKey())))
                 .region(Region.of(localstack.getRegion()))

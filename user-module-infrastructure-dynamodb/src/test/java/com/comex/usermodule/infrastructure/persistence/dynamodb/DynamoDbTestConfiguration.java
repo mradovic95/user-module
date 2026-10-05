@@ -6,7 +6,6 @@ import com.comex.usermodule.infrastructure.persistence.dynamodb.mapper.UserDynam
 import com.comex.usermodule.infrastructure.persistence.dynamodb.repository.UserDynamoRepository;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.testcontainers.containers.localstack.LocalStackContainer;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -24,7 +23,7 @@ public class DynamoDbTestConfiguration {
     @Bean
     public DynamoDbClient dynamoDbClient() {
         return DynamoDbClient.builder()
-                .endpointOverride(localstack.getEndpointOverride(LocalStackContainer.Service.DYNAMODB))
+                .endpointOverride(localstack.getEndpoint())
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(localstack.getAccessKey(), localstack.getSecretKey())))
                 .region(Region.of(localstack.getRegion()))
