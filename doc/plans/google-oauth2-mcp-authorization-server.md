@@ -258,7 +258,7 @@ Repo: `/Users/mihailoradovic/my_projects/easy-eval`.
      scope: openid,profile,email
    user:
      oauth2:
-       success-redirect-url: ${EASY_EVAL_FRONTEND_URL:http://localhost:5173}/auth/callback
+       success-redirect-url: ${EASY_EVAL_LOGIN_REDIRECT_URL:${EASY_EVAL_PUBLIC_URL:http://localhost:8081}/auth/callback.html}
        allowed-domains: ${EASY_EVAL_GOOGLE_ALLOWED_DOMAINS:}        # empty = anyone
        authorization-server:
          enabled: true
@@ -318,7 +318,7 @@ Repo: `/Users/mihailoradovic/my_projects/easy-eval-infrastructure`.
   Only this host serves `/mcp`, `/oauth2/**`, `/login/oauth2/**`, `/.well-known/**`; keep the REST
   gateway as-is or point the frontend to the new host too. Open 443 in the security group.
 - Secrets: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EASY_EVAL_PUBLIC_URL`,
-  `EASY_EVAL_FRONTEND_URL`, `EASY_EVAL_OAUTH2_SIGNING_KEY` (base64 PEM) as GitHub secrets → `docker run -e`.
+  `EASY_EVAL_LOGIN_REDIRECT_URL`, `EASY_EVAL_OAUTH2_SIGNING_KEY` (base64 PEM) as GitHub secrets → `docker run -e`.
 - Claude registration (document in easy-eval README):
   ```bash
   claude mcp add --transport http easy-eval https://<host>/mcp     # or http://localhost:8081/mcp locally
@@ -396,6 +396,6 @@ Left for the operator:
 2. Google Cloud console: add `http://localhost:8081/login/oauth2/code/google` and
    `https://<EASY_EVAL_DOMAIN>/login/oauth2/code/google` to the OAuth client's redirect URIs.
 3. Choose a DNS name for the backend, point its A record at the EIP, set the new GitHub secrets
-   (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EASY_EVAL_DOMAIN`, `EASY_EVAL_PUBLIC_URL`, `EASY_EVAL_FRONTEND_URL`,
+   (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EASY_EVAL_DOMAIN`, `EASY_EVAL_PUBLIC_URL`, `EASY_EVAL_LOGIN_REDIRECT_URL`,
    `EASY_EVAL_OAUTH2_SIGNING_KEY`, optionally `EASY_EVAL_GOOGLE_ALLOWED_DOMAINS`) and deploy.
 4. Run the manual verification above (MCP Inspector, Claude Code `/mcp` → Authenticate, claude.ai custom connector).
