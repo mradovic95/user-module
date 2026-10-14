@@ -204,7 +204,11 @@ Built on Spring Authorization Server (part of Spring Security 7) plus
 - Persistence: `JdbcRegisteredClientRepository`/`JdbcOAuth2AuthorizationService`/`JdbcOAuth2AuthorizationConsentService`
   when a `JdbcOperations` bean exists (tables from `2_create-oauth2-authorization-server-tables.yml` in the
   PostgreSQL infrastructure module), in-memory otherwise (with an unusable placeholder client, because Spring's
-  in-memory repository refuses to start empty)
+  in-memory repository refuses to start empty). The choice is made when each bean is CREATED, from an
+  `ObjectProvider<JdbcOperations>` in `PersistenceConfiguration` — never by `@ConditionalOnBean`: two competing
+  configurations guarded by bean conditions depended on registration order, and the in-memory fallback won in
+  applications that had a `JdbcTemplate`. Only class conditions remain (`InMemoryPersistenceConfiguration` applies
+  when spring-jdbc, an optional dependency, is absent altogether)
 
 ### Auto-Configuration Pattern
 
@@ -913,7 +917,8 @@ Tests for **user-module-authorization-server** live in
 `user-module-authorization-server/src/test/java/com/comex/usermodule/authorizationserver/`:
 
 ```
-├── UserModuleAuthorizationServerAutoConfigurationTest.java  # WebApplicationContextRunner + MockMvc, full OAuth flow
+├── UserModuleAuthorizationServerAutoConfigurationTest.java  # WebApplicationContextRunner + MockMvc, full OAuth flow,
+│                                                           # + which persistence the FULL auto-config picks
 ├── UserModuleAccessTokenCustomizerTest.java                 # Claims shaping (sub/email/roles/aud)
 ├── JdbcPersistenceIntegrationTest.java                      # Testcontainers PostgreSQL + Liquibase + JDBC services
 └── resource/
@@ -927,7 +932,9 @@ Tests for **user-module-authorization-server** live in
   authorization-server auto-configurations and drives the real protocol with MockMvc: metadata documents, Dynamic
   Client Registration (allowed vs rejected redirect hosts, tolerated `scope`), unauthenticated `/oauth2/authorize`
   redirecting to Google, the authorization code + PKCE exchange as a Google-authenticated user, token claims,
-  refresh-token rotation, loopback port wildcard and audience rejection by the provided `JwtDecoder`
+  refresh-token rotation, loopback port wildcard and audience rejection by the provided `JwtDecoder`. It also pins
+  the persistence choice on the full auto-configuration: JDBC when Boot auto-configures a `JdbcTemplate` (its own
+  Testcontainers PostgreSQL + the changelog), in-memory without one
 - Spring's authorization endpoint reads GET parameters from the query string, so MockMvc requests to
   `/oauth2/authorize` must use `queryParam`, not `param`
 - `JdbcPersistenceIntegrationTest` applies `user-master.yml` to a real PostgreSQL (this is the only test that runs

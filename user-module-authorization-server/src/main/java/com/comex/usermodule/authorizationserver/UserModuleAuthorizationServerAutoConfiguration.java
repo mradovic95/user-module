@@ -8,9 +8,9 @@ import java.util.Set;
 import org.springaicommunity.mcp.security.authorizationserver.config.LocalhostWildcardPortValidator;
 import org.springaicommunity.mcp.security.authorizationserver.config.McpAuthorizationServerConfigurer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -106,7 +106,7 @@ import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnProperty(prefix = AuthorizationServerProperties.PREFIX, name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(AuthorizationServerProperties.class)
-@Import({ UserModuleAuthorizationServerAutoConfiguration.JdbcPersistenceConfiguration.class,
+@Import({ UserModuleAuthorizationServerAutoConfiguration.PersistenceConfiguration.class,
 	UserModuleAuthorizationServerAutoConfiguration.InMemoryPersistenceConfiguration.class })
 public class UserModuleAuthorizationServerAutoConfiguration {
 
@@ -289,44 +289,63 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 		return matcher;
 	}
 
-	/** Registered clients, authorizations and consents in the application's database (tables via Liquibase). */
+	/** The in-memory repository refuses to start empty; this client cannot be used for anything. */
+	private static final RegisteredClient PLACEHOLDER_CLIENT = RegisteredClient.withId("user-module-placeholder")
+		.clientId("user-module-placeholder")
+		.clientName("user-module placeholder (unusable)")
+		.clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+		.authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+		.build();
+
+	/**
+	 * Registered clients, authorizations and consents when spring-jdbc is on the classpath: in the application's
+	 * database (tables via Liquibase) when a {@link JdbcOperations} bean exists, in memory otherwise — and then
+	 * everything is lost on restart.
+	 * <p>
+	 * The choice is made when each bean is CREATED, through an {@link ObjectProvider}, never by a bean condition. Two
+	 * competing configurations guarded by {@code @ConditionalOnBean} / {@code @ConditionalOnMissingBean} depended on
+	 * which registered its bean definitions first, and the in-memory fallback won in an application that had a
+	 * {@code JdbcTemplate}. At creation time every bean definition exists, so the order cannot matter. Only the
+	 * CLASS conditions remain, and those do not depend on order.
+	 */
 	@Configuration(proxyBeanMethods = false)
 	@ConditionalOnClass(JdbcOperations.class)
-	@ConditionalOnBean(JdbcOperations.class)
-	static class JdbcPersistenceConfiguration {
+	static class PersistenceConfiguration {
 
 		@ConditionalOnMissingBean
 		@Bean
-		RegisteredClientRepository registeredClientRepository(JdbcOperations jdbcOperations) {
-			return new JdbcRegisteredClientRepository(jdbcOperations);
+		RegisteredClientRepository registeredClientRepository(ObjectProvider<JdbcOperations> jdbcOperations) {
+			JdbcOperations jdbc = jdbcOperations.getIfAvailable();
+			return jdbc != null
+				? new JdbcRegisteredClientRepository(jdbc)
+				: new InMemoryRegisteredClientRepository(PLACEHOLDER_CLIENT);
 		}
 
 		@ConditionalOnMissingBean
 		@Bean
-		OAuth2AuthorizationService oAuth2AuthorizationService(JdbcOperations jdbcOperations,
+		OAuth2AuthorizationService oAuth2AuthorizationService(ObjectProvider<JdbcOperations> jdbcOperations,
 			RegisteredClientRepository registeredClientRepository) {
-			return new JdbcOAuth2AuthorizationService(jdbcOperations, registeredClientRepository);
+			JdbcOperations jdbc = jdbcOperations.getIfAvailable();
+			return jdbc != null
+				? new JdbcOAuth2AuthorizationService(jdbc, registeredClientRepository)
+				: new InMemoryOAuth2AuthorizationService();
 		}
 
 		@ConditionalOnMissingBean
 		@Bean
-		OAuth2AuthorizationConsentService oAuth2AuthorizationConsentService(JdbcOperations jdbcOperations,
+		OAuth2AuthorizationConsentService oAuth2AuthorizationConsentService(ObjectProvider<JdbcOperations> jdbcOperations,
 			RegisteredClientRepository registeredClientRepository) {
-			return new JdbcOAuth2AuthorizationConsentService(jdbcOperations, registeredClientRepository);
+			JdbcOperations jdbc = jdbcOperations.getIfAvailable();
+			return jdbc != null
+				? new JdbcOAuth2AuthorizationConsentService(jdbc, registeredClientRepository)
+				: new InMemoryOAuth2AuthorizationConsentService();
 		}
 	}
 
-	/** Fallback without a JDBC {@code DataSource}: everything is lost on restart. */
+	/** Without spring-jdbc on the classpath (e.g. the DynamoDB starter): in memory, lost on restart. */
 	@Configuration(proxyBeanMethods = false)
+	@ConditionalOnMissingClass("org.springframework.jdbc.core.JdbcOperations")
 	static class InMemoryPersistenceConfiguration {
-
-		/** The in-memory repository refuses to start empty; this client cannot be used for anything. */
-		private static final RegisteredClient PLACEHOLDER_CLIENT = RegisteredClient.withId("user-module-placeholder")
-			.clientId("user-module-placeholder")
-			.clientName("user-module placeholder (unusable)")
-			.clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-			.authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-			.build();
 
 		@ConditionalOnMissingBean
 		@Bean

@@ -35,6 +35,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration;
+import org.springframework.boot.liquibase.autoconfigure.LiquibaseAutoConfiguration;
 import org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration;
 import org.springframework.boot.security.oauth2.client.autoconfigure.OAuth2ClientAutoConfiguration;
 import org.springframework.boot.security.oauth2.client.autoconfigure.servlet.OAuth2ClientWebSecurityAutoConfiguration;
@@ -44,6 +47,7 @@ import org.springframework.boot.test.context.assertj.AssertableWebApplicationCon
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
@@ -52,6 +56,15 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
+import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.web.servlet.MockMvc;
@@ -59,6 +72,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.comex.usermodule.authorizationserver.resource.BearerResourceMetadataEntryPoint;
 import com.comex.usermodule.authorizationserver.resource.ProtectedResources;
@@ -311,6 +325,56 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 			// THEN
 			JwtDecoder decoder = context.getBean(JWT_DECODER_BEAN_NAME, JwtDecoder.class);
 			assertThatThrownBy(() -> decoder.decode(accessToken)).isInstanceOf(JwtValidationException.class);
+		});
+	}
+
+	@Test
+	void testUsesJdbcPersistenceWhenJdbcTemplateIsAutoConfigured() {
+		// GIVEN
+		// JdbcTemplate comes from Boot's auto-configuration, as in an application, so the real ordering applies; the
+		// JDBC authorization service reads its table's column types when it is built, hence a real database
+		try (PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16-alpine")) {
+			postgres.start();
+			WebApplicationContextRunner runner = sut
+				.withConfiguration(AutoConfigurations.of(
+					DataSourceAutoConfiguration.class,
+					JdbcTemplateAutoConfiguration.class,
+					LiquibaseAutoConfiguration.class))
+				.withPropertyValues(
+					"spring.datasource.url=" + postgres.getJdbcUrl(),
+					"spring.datasource.username=" + postgres.getUsername(),
+					"spring.datasource.password=" + postgres.getPassword(),
+					"spring.liquibase.change-log=classpath:db/changelog/user-master.yml");
+
+			// WHEN
+			runner.run(context -> {
+				// THEN
+				assertThat(context).hasSingleBean(JdbcOperations.class);
+				assertThat(context.getBean(RegisteredClientRepository.class))
+					.isInstanceOf(JdbcRegisteredClientRepository.class);
+				assertThat(context.getBean(OAuth2AuthorizationService.class))
+					.isInstanceOf(JdbcOAuth2AuthorizationService.class);
+				assertThat(context.getBean(OAuth2AuthorizationConsentService.class))
+					.isInstanceOf(JdbcOAuth2AuthorizationConsentService.class);
+			});
+		}
+	}
+
+	@Test
+	void testFallsBackToInMemoryPersistenceWithoutJdbc() {
+		// GIVEN
+		// enabled runner, no DataSource
+
+		// WHEN
+		sut.run(context -> {
+			// THEN
+			assertThat(context).doesNotHaveBean(JdbcOperations.class);
+			assertThat(context.getBean(RegisteredClientRepository.class))
+				.isInstanceOf(InMemoryRegisteredClientRepository.class);
+			assertThat(context.getBean(OAuth2AuthorizationService.class))
+				.isInstanceOf(InMemoryOAuth2AuthorizationService.class);
+			assertThat(context.getBean(OAuth2AuthorizationConsentService.class))
+				.isInstanceOf(InMemoryOAuth2AuthorizationConsentService.class);
 		});
 	}
 

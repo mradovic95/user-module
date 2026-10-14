@@ -122,7 +122,7 @@ class JdbcPersistenceIntegrationTest {
 
 	/** Stands in for the module auto-configuration, which orders itself after the JDBC auto-configurations. */
 	@AutoConfiguration(after = JdbcTemplateAutoConfiguration.class)
-	@Import(UserModuleAuthorizationServerAutoConfiguration.JdbcPersistenceConfiguration.class)
+	@Import(UserModuleAuthorizationServerAutoConfiguration.PersistenceConfiguration.class)
 	static class JdbcPersistenceAutoConfiguration {
 	}
 
