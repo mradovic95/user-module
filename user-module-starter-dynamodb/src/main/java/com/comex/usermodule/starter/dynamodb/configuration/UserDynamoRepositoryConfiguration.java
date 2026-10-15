@@ -1,4 +1,4 @@
-package com.comex.usermodule.starter.postgre.configuration;
+package com.comex.usermodule.starter.dynamodb.configuration;
 
 import java.net.URI;
 import java.util.HashMap;
@@ -24,7 +24,8 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
 
 @AutoConfiguration
-@ConditionalOnProperty(name = "user.persistence.type", havingValue = "dynamodb")
+// the DynamoDB starter carries no other persistence, so it is the default here
+@ConditionalOnProperty(name = "user.persistence.type", havingValue = "dynamodb", matchIfMissing = true)
 @Slf4j
 public class UserDynamoRepositoryConfiguration {
 

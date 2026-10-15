@@ -12,6 +12,6 @@ databaseChangeLog:
       file: insert-initial-roles.yml
       relativeToChangelogFile: true
   - include:
-      file: insert-initial-users.yml
+      file: remove-seeded-users.yml
       relativeToChangelogFile: true
 

@@ -1,8 +1,13 @@
 package com.comex.usermodule.authorizationserver;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -55,16 +60,27 @@ public final class PublicClientRefreshTokenAuthenticationConverter implements Au
 	}
 
 	/** Body parameters only, as Spring's token endpoint converters read them (query string excluded). */
-	private static MultiValueMap<String, String> formParameters(HttpServletRequest request) {
-		String queryString = StringUtils.hasText(request.getQueryString()) ? request.getQueryString() : "";
+	static MultiValueMap<String, String> formParameters(HttpServletRequest request) {
+		Set<String> queryKeys = queryParameterNames(request.getQueryString());
 		MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
 		request.getParameterMap().forEach((key, values) -> {
-			if (!queryString.contains(key + "=") && values.length > 0) {
+			if (!queryKeys.contains(key) && values.length > 0) {
 				for (String value : values) {
 					parameters.add(key, value);
 				}
 			}
 		});
 		return parameters;
+	}
+
+	/** Exact names, never a substring match: {@code xclient_id=} in the query must not hide a body {@code client_id}. */
+	private static Set<String> queryParameterNames(String queryString) {
+		if (!StringUtils.hasText(queryString)) {
+			return Set.of();
+		}
+		return Arrays.stream(queryString.split("&"))
+			.map(pair -> pair.split("=", 2)[0])
+			.map(name -> URLDecoder.decode(name, StandardCharsets.UTF_8))
+			.collect(Collectors.toSet());
 	}
 }

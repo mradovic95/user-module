@@ -84,7 +84,7 @@ class UserServiceTest {
 		verify(eventPublisher).publish(eventCaptor.capture());
 		UserCreatedEvent publishedEvent = eventCaptor.getValue();
 		assertThat(publishedEvent.getUsername()).isEqualTo("testuser");
-		assertThat(publishedEvent.getEmail()).isEqualTo("testuser");
+		assertThat(publishedEvent.getEmail()).isEqualTo("test@example.com");
 	}
 
 	private static Stream<Object[]> provideVerificationScenarios() {

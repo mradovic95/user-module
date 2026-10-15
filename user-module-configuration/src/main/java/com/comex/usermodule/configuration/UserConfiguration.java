@@ -22,6 +22,7 @@ public class UserConfiguration {
 	@Autowired
 	private UserProperties userProperties;
 
+	@ConditionalOnMissingBean(name = "passwordEncoderAdapter")
 	@Bean(name = "passwordEncoderAdapter")
 	public PasswordEncoder passwordEncoder(
 		org.springframework.security.crypto.password.PasswordEncoder springPasswordEncoder) {

@@ -33,6 +33,11 @@
 			<groupId>com.comex</groupId>
 			<artifactId>user-module-infrastructure-postgre</artifactId>
 		</dependency>
+		<!-- Boot 4 only runs Liquibase with its starter; liquibase-core alone leaves the changelog unapplied -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-liquibase</artifactId>
+		</dependency>
 	</dependencies>
 
 </project>

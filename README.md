@@ -137,8 +137,6 @@ Choose the appropriate **starter module** based on your persistence strategy:
 **Not included:**
 - The endpoint module (`/user` REST controller). Add `com.comex:user-module-endpoint` (same version) and
   component-scan `com.comex.usermodule.endpoint`; no auto-configuration registers it.
-- PostgreSQL: `spring-boot-starter-liquibase`. Spring Boot 4 only runs Liquibase with it on the classpath; the
-  starter brings `liquibase-core` alone.
 
 The PostgreSQL starter declares `@EnableJpaRepositories`/`@EntityScan` for the module's own packages, which turns
 Spring Boot's JPA auto-scan off for your application: list your own repository and entity packages explicitly.
@@ -211,9 +209,8 @@ user:
         private-key-pem: ${OAUTH2_SIGNING_KEY}
 ```
 
-**Note**: `user.persistence.type` defaults to `postgresql`, so the PostgreSQL starter needs nothing; with the
-DynamoDB starter set it to `dynamodb`, otherwise no `UserRepository` is registered and the application does not
-start.
+**Note**: `user.persistence.type` selects the repository; each starter defaults to its own store (`postgresql` /
+`dynamodb`), so neither needs it set.
 
 **Important:** `user.oauth2.authorization-server.issuer` is required; the application does not start without it
 ("user.oauth2.authorization-server.issuer must be set"). Every token is signed RS256 with the `jwk` key. Without
@@ -228,7 +225,8 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048
 
 #### For PostgreSQL:
 
-**No manual setup required** (beyond `spring-boot-starter-liquibase`, see Step 1). The module includes Liquibase
+**No manual setup required** (the PostgreSQL starter brings `spring-boot-starter-liquibase`, which Spring Boot 4
+needs to run the changelog). The module includes Liquibase
 migrations that create all necessary tables and initial data when your application starts.
 
 **What gets created:**
@@ -239,7 +237,9 @@ migrations that create all necessary tables and initial data when your applicati
 - `roles_permissions` - Role-to-permission mappings
 - `oauth2_registered_client`, `oauth2_authorization`, `oauth2_authorization_consent` - Authorization server storage
 - Default roles: `ROLE_USER`, `ROLE_ADMIN`
-- Seed users: `test-user-1..3@somemail.com` (`ROLE_USER`) and `admin@somemail.com` (`ROLE_ADMIN`), all `VERIFIED`
+- No users: create the first one with `POST /user` or a Google login. Up to 0.0.10 the changelog seeded four users with
+  published passwords (including an admin); `remove-seeded-users.yml` deletes them again while their password is
+  still the seeded one
 
 #### For DynamoDB:
 
@@ -400,8 +400,8 @@ spring:
 - `1_create-role-and-permission-tables.yml` - Creates roles and permissions
 - `2_create-oauth2-authorization-server-tables.yml` - Creates the authorization server tables
 - `insert-initial-roles.yml` - Inserts the default `ROLE_USER` and `ROLE_ADMIN` roles
-- `insert-initial-users.yml` - Inserts three test users and an `admin` user (always applied; it is part of
-  `user-master.yml`)
+- `remove-seeded-users.yml` - Deletes the users earlier versions seeded (`test-user-1..3`, `admin`), only while
+  their password is still the published seed
 
 ### Step 7: Understanding Auto-Configuration
 
@@ -753,7 +753,7 @@ All user-module properties use the `user` prefix in your `application.yml`:
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `user.verification-required` | Boolean | `false` | Enable/disable email verification requirement |
-| `user.persistence.type` | String | `postgresql` | `postgresql` or `dynamodb`; must be `dynamodb` with the DynamoDB starter |
+| `user.persistence.type` | String | the starter's store | `postgresql` or `dynamodb`; each starter defaults to its own |
 
 ### PostgreSQL Properties
 

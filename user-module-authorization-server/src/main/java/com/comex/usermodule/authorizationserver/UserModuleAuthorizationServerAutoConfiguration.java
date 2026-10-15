@@ -169,6 +169,7 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 		return new JwtAccessTokenIssuer(jwtEncoder, protectedResources, properties.getAccessTokenTtl());
 	}
 
+	@ConditionalOnMissingBean
 	@Bean
 	public FirstPartyClientRegistrar userModuleFirstPartyClientRegistrar(
 		RegisteredClientRepository registeredClientRepository, AuthorizationServerProperties properties) {
@@ -206,6 +207,7 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 	 * Verifies tokens issued by this server in-process (no HTTP round trip to the JWK set): signature, issuer and
 	 * audience against the configured protected resources.
 	 */
+	@ConditionalOnMissingBean(name = JWT_DECODER_BEAN_NAME)
 	@Bean(JWT_DECODER_BEAN_NAME)
 	public JwtDecoder userModuleAuthorizationServerJwtDecoder(JWKSource<SecurityContext> jwkSource,
 		AuthorizationServerSettings authorizationServerSettings, ProtectedResources protectedResources) {
@@ -221,6 +223,7 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 	}
 
 	/** Authenticates a decoded token with name = {@code sub} (email) and authorities from the {@code roles} claim. */
+	@ConditionalOnMissingBean(name = JWT_AUTHENTICATION_CONVERTER_BEAN_NAME)
 	@Bean(JWT_AUTHENTICATION_CONVERTER_BEAN_NAME)
 	public JwtAuthenticationConverter userModuleJwtAuthenticationConverter() {
 		JwtAuthenticationConverter converter = new JwtAuthenticationConverter();

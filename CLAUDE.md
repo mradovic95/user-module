@@ -310,7 +310,7 @@ user-module/                                    # Parent Maven module (aggregato
 │       ├── 1_create-role-and-permission-tables.yml
 │       ├── 2_create-oauth2-authorization-server-tables.yml
 │       ├── insert-initial-roles.yml (+ .sql)
-│       └── insert-initial-users.yml (+ .sql)
+│       └── remove-seeded-users.yml
 │
 ├── user-module-infrastructure-dynamodb/        # DynamoDB persistence
 │   ├── pom.xml
@@ -329,6 +329,8 @@ user-module/                                    # Parent Maven module (aggregato
 │   └── src/main/java/com/comex/usermodule/endpoint/
 │       ├── controller/                         # REST controllers
 │       │   └── UserController.java
+│       ├── exception/
+│       │   └── UserExceptionHandler.java       # UserException -> 404 (NOT_FOUND) / 400, scoped to UserController
 │       ├── model/                              # Request/Response models
 │       │   ├── CreateUserRequest.java
 │       │   ├── LoginUserRequest.java
@@ -460,7 +462,7 @@ The user-module supports **two persistence implementations** that can be switche
 
 | Aspect            | PostgreSQL (Default)                         | DynamoDB                         |
 |-------------------|----------------------------------------------|----------------------------------|
-| **Activation**    | `user.persistence.type=postgresql` (default) | `user.persistence.type=dynamodb` |
+| **Activation**    | `user.persistence.type=postgresql` (the PostgreSQL starter's default) | `user.persistence.type=dynamodb` (the DynamoDB starter's default) |
 | **Data Model**    | Normalized (relational)                      | Denormalized (document-based)    |
 | **ID Type**       | Long (auto-generated sequence)               | String (UUID)                    |
 | **Relationships** | Many-to-many tables                          | Embedded documents               |
@@ -484,8 +486,9 @@ The user-module supports **two persistence implementations** that can be switche
 3. `2_create-oauth2-authorization-server-tables.yml` - Authorization server tables (registered clients,
    authorizations, consents)
 4. `insert-initial-roles.yml` - Default roles (`ROLE_USER`, `ROLE_ADMIN`)
-5. `insert-initial-users.yml` - Default users (`test-user-1..3` with `ROLE_USER`, `admin` with `ROLE_ADMIN`, all
-   `VERIFIED`)
+5. `remove-seeded-users.yml` - Deletes the four users versions up to 0.0.10 seeded with published passwords
+   (`test-user-1..3`, `admin` with `ROLE_ADMIN`), only while their password is still the seeded hash. No user is
+   seeded any more.
 
 #### Key Tables
 
@@ -520,7 +523,7 @@ Users are stored as single items with **embedded roles and permissions** (denorm
 
 #### Configuration
 
-Activated when `user.persistence.type=dynamodb` in application.yml or application-dynamodb.yml.
+Activated by default in the DynamoDB starter, or when `user.persistence.type=dynamodb`.
 
 #### Table Creation
 
@@ -981,6 +984,7 @@ Tests for **user-module-authorization-server** live in
 │                                                           # + which persistence the FULL auto-config picks
 ├── UserModuleAccessTokenCustomizerTest.java                 # Claims shaping (sub/email/roles/aud)
 ├── JwtAccessTokenIssuerTest.java                            # Login token claims, RS256 signature
+├── PublicClientRefreshTokenAuthenticationConverterTest.java # client_id-only auth for refresh/password, exact query names
 ├── JdbcPersistenceIntegrationTest.java                      # Testcontainers PostgreSQL + Liquibase + JDBC services
 └── resource/
     ├── ProtectedResourcesTest.java
@@ -1049,17 +1053,19 @@ This configuration:
 **Setup:**
 - Uses `@WebMvcTest(controllers = UserController.class)` for controller slice testing (the endpoint module has no
   Spring Security dependency, so no security auto-configuration needs to be excluded)
-- Uses `@Import({UserController.class, UserWebMapper.class})` to import required beans
+- Uses `@Import({UserController.class, UserWebMapper.class, UserExceptionHandler.class})` to import required beans
 - Mocks service dependencies with `@MockitoBean` (UserService, UserAuthenticationService, UserVerificationService)
 - Autowires MockMvc as `sut` (system under test)
 
-**Test Methods (8 tests):**
+**Test Methods (10 tests):**
 1. `testCreateUser` - Create user endpoint
 2. `testCreateUserWithVariousInputs` - Parameterized test for edge cases
 3. `testLogin` - Login endpoint
 4. `testVerify` - Email verification endpoint
 5. `testFindByEmail` - Get user by email
 6. `testFindByEmailWithMultipleRoles` - User with multiple roles
+7. `testFindByEmailUnknownUserIsNotFound` - Unknown email answers 404 `{"error":"NOT_FOUND"}`
+8. `testVerifyUnknownCodeIsNotFound` - Unknown verification code answers 404
 
 **Key Principles:**
 - Controller tests are isolated from service and persistence layers

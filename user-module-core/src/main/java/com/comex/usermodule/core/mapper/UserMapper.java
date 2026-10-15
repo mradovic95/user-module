@@ -39,7 +39,7 @@ public class UserMapper {
 			.id(user.getId())
 			.timestamp(Instant.now())
 			.username(user.getUsername())
-			.email(user.getUsername())
+			.email(user.getEmail())
 			.build();
 	}
 

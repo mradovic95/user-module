@@ -1,9 +1,12 @@
 package com.comex.usermodule.endpoint.controller;
 
 import com.comex.usermodule.core.domain.User;
+import com.comex.usermodule.core.exception.UserException;
+import com.comex.usermodule.core.exception.UserExceptionKey;
 import com.comex.usermodule.core.service.UserAuthenticationService;
 import com.comex.usermodule.core.service.UserService;
 import com.comex.usermodule.core.service.UserVerificationService;
+import com.comex.usermodule.endpoint.exception.UserExceptionHandler;
 import com.comex.usermodule.endpoint.mapper.UserWebMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -28,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = UserController.class)
-@Import({UserController.class, UserWebMapper.class})
+@Import({UserController.class, UserWebMapper.class, UserExceptionHandler.class})
 class UserControllerTest {
 
 	@Autowired
@@ -163,5 +166,30 @@ class UserControllerTest {
 			.andExpect(jsonPath("$.roles.length()").value(2));
 
 		verify(userService).findByEmail(DEFAULT_EMAIL);
+	}
+
+	@Test
+	void testFindByEmailUnknownUserIsNotFound() throws Exception {
+		// GIVEN
+		when(userService.findByEmail(DEFAULT_EMAIL))
+			.thenThrow(new UserException(UserExceptionKey.NOT_FOUND, "User not found"));
+
+		// WHEN & THEN
+		sut.perform(get("/user")
+				.param("email", DEFAULT_EMAIL))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error").value("NOT_FOUND"));
+	}
+
+	@Test
+	void testVerifyUnknownCodeIsNotFound() throws Exception {
+		// GIVEN
+		doThrow(new UserException(UserExceptionKey.NOT_FOUND, "Code not found"))
+			.when(userVerificationService).verify("unknown");
+
+		// WHEN & THEN
+		sut.perform(get("/user/verify")
+				.param("code", "unknown"))
+			.andExpect(status().isNotFound());
 	}
 }
