@@ -1,11 +1,10 @@
 package com.comex.usermodule.authorizationserver;
 
-import java.util.List;
+import java.util.ArrayList;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.oidc.StandardClaimNames;
 import org.springframework.security.oauth2.core.user.OAuth2User;
-import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
@@ -18,10 +17,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Shapes access tokens like the module's own JWTs: {@code sub} is the user's email and {@code roles} is the
- * comma-joined authority list of the module user, so resource servers can authenticate both token kinds the same
- * way. Also adds {@code email}/{@code name} and, when the client sent no {@code resource} parameter, binds the token
- * to every configured protected resource.
+ * Shapes access tokens from {@code /oauth2/token} exactly like the ones {@link JwtAccessTokenIssuer} hands out on
+ * login: {@code sub} is the user's email, {@code roles} the comma-joined authority list of the module user, plus
+ * {@code email}/{@code name}. The audience is always every configured protected resource, whatever {@code resource}
+ * parameter the client sent: one token works on every resource of the application.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -37,6 +36,10 @@ public class UserModuleAccessTokenCustomizer implements OAuth2TokenCustomizer<Jw
 		if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
 			return;
 		}
+		// overrides both Spring's default (the client id) and the MCP resource-indicator customizer. A mutable list:
+		// the claims are persisted with the authorization, and the JDBC store's Jackson type validator refuses
+		// java.util.ImmutableCollections, so a List.of / toList() here breaks every later refresh
+		context.getClaims().audience(new ArrayList<>(protectedResources.resourceUris()));
 		Authentication principal = context.getPrincipal();
 		String email = emailOf(principal);
 		if (!StringUtils.hasText(email)) {
@@ -54,10 +57,6 @@ public class UserModuleAccessTokenCustomizer implements OAuth2TokenCustomizer<Jw
 		String name = nameOf(principal);
 		if (StringUtils.hasText(name)) {
 			context.getClaims().claim(StandardClaimNames.NAME, name);
-		}
-		List<String> resourceUris = protectedResources.resourceUris();
-		if (!resourceUris.isEmpty()) {
-			context.getClaims().claims(claims -> claims.putIfAbsent(JwtClaimNames.AUD, resourceUris));
 		}
 	}
 

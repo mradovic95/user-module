@@ -6,12 +6,17 @@
 |---|-------|---------|
 | 1 | **databasechangelog** | id, author, filename, dateexecuted, orderexecuted, exectype, md5sum, description, comments, tag, liquibase, contexts, labels, deployment_id |
 | 2 | **databasechangeloglock** | id, locked, lockgranted, lockedby |
-| 3 | **notification** | id, type, priority, status, send_to, title, body, template_id, parameters, created_at |
-| 4 | **permission** | id, created_at, name |
-| 5 | **role** | id, created_at, name |
-| 6 | **roles_permissions** | role_id, permission_id |
-| 7 | **user_table** | id, created_at, username, password, email, status, verification_code |
-| 8 | **users_roles** | user_id, role_id |
+| 3 | **oauth2_authorization** | id, registered_client_id, principal_name, authorization_grant_type, authorized_scopes, attributes, state, authorization_code_* (value, issued_at, expires_at, metadata), access_token_* (value, issued_at, expires_at, metadata, type, scopes), oidc_id_token_* (value, issued_at, expires_at, metadata), refresh_token_* (value, issued_at, expires_at, metadata), user_code_* (value, issued_at, expires_at, metadata), device_code_* (value, issued_at, expires_at, metadata) |
+| 4 | **oauth2_authorization_consent** | registered_client_id, principal_name, authorities |
+| 5 | **oauth2_registered_client** | id, client_id, client_id_issued_at, client_secret, client_secret_expires_at, client_name, client_authentication_methods, authorization_grant_types, redirect_uris, post_logout_redirect_uris, scopes, client_settings, token_settings |
+| 6 | **permission** | id, created_at, name |
+| 7 | **role** | id, created_at, name |
+| 8 | **roles_permissions** | role_id, permission_id |
+| 9 | **user_table** | id, created_at, username, password, email, status, verification_code |
+| 10 | **users_roles** | user_id, role_id |
+
+The `oauth2_*` tables (Spring Authorization Server schema, `2_create-oauth2-authorization-server-tables.yml`) have
+no foreign keys; `registered_client_id` refers to `oauth2_registered_client.id` by convention.
 
 ## Entity Relationship Diagram
 
@@ -53,18 +58,45 @@ entity "databasechangeloglock" as databasechangeloglock {
   lockedby : varchar(255)
 }
 
-entity "notification" as notification {
-  *id : bigint <<PK>>
+entity "oauth2_registered_client" as oauth2_registered_client {
+  *id : varchar(100) <<PK>>
   --
-  *type : varchar
-  *priority : varchar
-  *status : varchar
-  *send_to : varchar
-  *title : varchar
-  *body : varchar
-  template_id : varchar
-  parameters : jsonb
-  *created_at : timestamp
+  *client_id : varchar(100)
+  *client_id_issued_at : timestamptz
+  client_secret : varchar(200)
+  client_secret_expires_at : timestamptz
+  *client_name : varchar(200)
+  *client_authentication_methods : varchar(1000)
+  *authorization_grant_types : varchar(1000)
+  redirect_uris : varchar(1000)
+  post_logout_redirect_uris : varchar(1000)
+  *scopes : varchar(1000)
+  *client_settings : varchar(2000)
+  *token_settings : varchar(2000)
+}
+
+entity "oauth2_authorization" as oauth2_authorization {
+  *id : varchar(100) <<PK>>
+  --
+  *registered_client_id : varchar(100)
+  *principal_name : varchar(200)
+  *authorization_grant_type : varchar(100)
+  authorized_scopes : varchar(1000)
+  attributes : text
+  state : varchar(500)
+  authorization_code_* : value, issued_at, expires_at, metadata
+  access_token_* : value, issued_at, expires_at, metadata, type, scopes
+  oidc_id_token_* : value, issued_at, expires_at, metadata
+  refresh_token_* : value, issued_at, expires_at, metadata
+  user_code_* : value, issued_at, expires_at, metadata
+  device_code_* : value, issued_at, expires_at, metadata
+}
+
+entity "oauth2_authorization_consent" as oauth2_authorization_consent {
+  *registered_client_id : varchar(100) <<PK>>
+  *principal_name : varchar(200) <<PK>>
+  --
+  *authorities : varchar(1000)
 }
 
 entity "permission" as permission {

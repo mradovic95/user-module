@@ -11,18 +11,10 @@ import lombok.Data;
 @ConfigurationProperties(prefix = "user")
 public class UserProperties {
 
-	private JwtProperties jwt = new JwtProperties();
 	private boolean verificationRequired = false;
 	private PersistenceProperties persistence = new PersistenceProperties();
 	private DynamoDbProperties dynamodb = new DynamoDbProperties();
 	private OAuth2Properties oauth2 = new OAuth2Properties();
-
-	@Data
-	public static class JwtProperties {
-
-		private String jwtSecretKey = "simpleSecretKeyasdadadadadadadadasdadasdasdasd";
-		private Long jwtExpiration = 3600L * 1000L;
-	}
 
 	@Data
 	public static class PersistenceProperties {
@@ -42,8 +34,8 @@ public class UserProperties {
 	public static class OAuth2Properties {
 
 		/**
-		 * Where to send the browser after a successful OAuth2 (Google) login. The module JWT is appended as a
-		 * {@code token} query parameter. When blank, the JWT is written to the response body as JSON instead.
+		 * Where to send the browser after a successful OAuth2 (Google) login. The access token is appended as a
+		 * {@code token} query parameter. When blank, the token is written to the response body as JSON instead.
 		 */
 		private String successRedirectUrl;
 

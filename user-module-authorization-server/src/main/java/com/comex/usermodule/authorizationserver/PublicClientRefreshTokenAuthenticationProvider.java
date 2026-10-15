@@ -1,5 +1,7 @@
 package com.comex.usermodule.authorizationserver;
 
+import java.util.Set;
+
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
@@ -17,13 +19,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Authenticates a public client on a {@code refresh_token} request by its {@code client_id}; the refresh token
- * itself is verified by Spring's refresh-token grant provider afterwards. Must run before Spring's
+ * Authenticates a public client on a {@code refresh_token} or {@code password} request by its {@code client_id}; the
+ * refresh token or the user's password is verified by the grant's own provider afterwards. Must run before Spring's
  * {@code PublicClientAuthenticationProvider}, which would demand a PKCE {@code code_verifier}.
  */
 @Slf4j
 @RequiredArgsConstructor
 public final class PublicClientRefreshTokenAuthenticationProvider implements AuthenticationProvider {
+
+	/** Grant types a public client may request with its {@code client_id} alone. */
+	static final Set<String> GRANT_TYPES = Set.of(AuthorizationGrantType.REFRESH_TOKEN.getValue(),
+		PasswordGrantAuthenticationToken.PASSWORD.getValue());
 
 	private static final String ERROR_URI = "https://datatracker.ietf.org/doc/html/rfc6749#section-3.2.1";
 
@@ -36,7 +42,7 @@ public final class PublicClientRefreshTokenAuthenticationProvider implements Aut
 			return null;
 		}
 		Object grantType = clientAuthentication.getAdditionalParameters().get(OAuth2ParameterNames.GRANT_TYPE);
-		if (!AuthorizationGrantType.REFRESH_TOKEN.getValue().equals(grantType)) {
+		if (!isPublicClientGrant(grantType)) {
 			// PKCE code exchanges are handled by Spring's PublicClientAuthenticationProvider
 			return null;
 		}
@@ -48,8 +54,13 @@ public final class PublicClientRefreshTokenAuthenticationProvider implements Aut
 		if (!registeredClient.getClientAuthenticationMethods().contains(ClientAuthenticationMethod.NONE)) {
 			throw invalidClient("authentication_method");
 		}
-		log.debug("Authenticated public client {} for a refresh token request.", clientId);
+		log.debug("Authenticated public client {} for a {} request.", clientId, grantType);
 		return new OAuth2ClientAuthenticationToken(registeredClient, ClientAuthenticationMethod.NONE, null);
+	}
+
+	/** {@code Set.of(...).contains(null)} throws, and a request without {@code grant_type} is simply not ours. */
+	static boolean isPublicClientGrant(Object grantType) {
+		return grantType instanceof String value && GRANT_TYPES.contains(value);
 	}
 
 	@Override

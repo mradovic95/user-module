@@ -84,6 +84,7 @@ exists in user-module (uncommitted 0.0.8 work); it is reused for both flows.
 - Two token kinds coexist: the existing HS256 user JWT for REST/frontend, and RS256 authorization
   server JWTs (aud-bound) for MCP clients. `eek_` API tokens keep working on `/mcp` (CI / SUT
   scripts). HS256 user JWTs are no longer accepted on `/mcp` (nothing uses that).
+  *Superseded 2026-10-15 (user-module 0.0.10): one token kind only — see "Update (2026-10-15)" at the end.*
 - DCR is the client-registration mechanism (Claude falls back to it; CIMD not supported by SAS).
 - Consent page stays on for DCR clients (spec requirement for a federated proxy; SAS ships a default
   page). The consent page shows the client's redirect host.
@@ -399,3 +400,22 @@ Left for the operator:
    (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EASY_EVAL_DOMAIN`, `EASY_EVAL_PUBLIC_URL`, `EASY_EVAL_LOGIN_REDIRECT_URL`,
    `EASY_EVAL_OAUTH2_SIGNING_KEY`, optionally `EASY_EVAL_GOOGLE_ALLOWED_DOMAINS`) and deploy.
 4. Run the manual verification above (MCP Inspector, Claude Code `/mcp` → Authenticate, claude.ai custom connector).
+
+---
+
+## Update (2026-10-15) — one token kind (user-module 0.0.10-SNAPSHOT)
+
+Supersedes the "two token kinds coexist" decision above; the rest of this plan is kept as history.
+
+- HS256 is gone: `JwtService`, `JwtAuthFilter`, `user.jwt.*`, the `JWT_TOKEN_INVALID`/`JWT_TOKEN_EXPIRED` keys and
+  jjwt are deleted.
+- The authorization server is mandatory (both starters depend on it, no `enabled` switch, `issuer` required) and is
+  the one issuer of every token: `POST /user/login` and the Google `?token=` now return its RS256 JWT through the
+  new core port `AccessTokenIssuer` (`JwtAccessTokenIssuer`); response shapes unchanged.
+- Every access token carries `aud` = all configured `resources`, whatever `resource` the client sent (also fixes
+  the latent `aud=[client_id]` for requests without `resource`), so one token works on every resource.
+- New `password` grant on `/oauth2/token` for the first-party client (`first-party-client-id`, registered at startup
+  by `FirstPartyClientRegistrar`; refresh tokens rotated); DCR/MCP clients get `unauthorized_client`.
+- The default API chain `userModuleSecurityFilterChain` moved to `UserModuleAuthorizationServerAutoConfiguration`
+  and is an `oauth2ResourceServer().jwt()` chain; an application replacing it uses the module's decoder and
+  converter beans instead of `JwtAuthFilter`.

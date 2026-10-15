@@ -69,18 +69,18 @@ class UserModuleAccessTokenCustomizerTest {
 	}
 
 	@Test
-	void testCustomizeKeepsAudienceSetByResourceParameter() {
+	void testCustomizeReplacesAudienceSetByResourceParameterOrClientId() {
 		// GIVEN
 		when(userService.findByEmailOptional(DEFAULT_EMAIL)).thenReturn(Optional.empty());
 		JwtEncodingContext context = context(OAuth2TokenType.ACCESS_TOKEN, googleAuthentication(DEFAULT_EMAIL));
-		context.getClaims().audience(List.of("http://localhost:8081/other"));
+		context.getClaims().audience(List.of("http://localhost:8081/other", "some-client-id"));
 
 		// WHEN
 		sut.customize(context);
 
 		// THEN
 		Map<String, Object> claims = context.getClaims().build().getClaims();
-		assertThat(claims).containsEntry("aud", List.of("http://localhost:8081/other"))
+		assertThat(claims).containsEntry("aud", List.of(MCP_RESOURCE))
 			.containsEntry(UserModuleAccessTokenCustomizer.ROLES_CLAIM, "");
 	}
 
@@ -109,6 +109,7 @@ class UserModuleAccessTokenCustomizerTest {
 
 		// THEN
 		assertThat(context.getClaims().build().getClaims()).containsEntry("sub", "google-subject")
+			.containsEntry("aud", List.of(MCP_RESOURCE))
 			.doesNotContainKeys("email", UserModuleAccessTokenCustomizer.ROLES_CLAIM);
 		verifyNoInteractions(userService);
 	}

@@ -3,7 +3,7 @@
 ## Project Overview
 
 **user-module** is a Spring Boot 4.1.1-based reusable authentication and user management module designed to be
-integrated into larger applications. It provides JWT-based authentication, OAuth2 (Google) login, user verification, and
+integrated into larger applications. It provides JWT-based authentication (RS256 tokens from its own OAuth 2.1 authorization server), OAuth2 (Google) login, user verification, and
 role-based access control.
 
 **Type**: Multi-Module Maven Project - Reusable Spring Boot Auto-Configuration Library
@@ -35,7 +35,8 @@ role-based access control.
 
 ### Security & Authentication
 
-- **JWT (jjwt 0.13.0)** - Token-based authentication
+- **Spring Authorization Server** (Spring Security 7) - the one issuer of every token (RS256 JWT); validated by
+  Spring's OAuth2 resource server (`oauth2ResourceServer().jwt()`)
 - **BCrypt** - Password encryption
 - **OAuth2** - Google authentication integration
 
@@ -60,7 +61,7 @@ user-module (parent pom)
 ├── user-module-infrastructure-dynamodb   # DynamoDB persistence adapter
 ├── user-module-endpoint                  # REST controllers and web models
 ├── user-module-configuration             # Auto-configuration and security
-├── user-module-authorization-server      # Optional OAuth 2.1 authorization server for MCP clients
+├── user-module-authorization-server      # OAuth 2.1 authorization server: issues every token, default API chain
 ├── user-module-starter-postgre           # PostgreSQL starter dependency
 └── user-module-starter-dynamodb          # DynamoDB starter dependency
 ```
@@ -84,7 +85,7 @@ The project follows **Hexagonal Architecture** principles with clear separation 
 │  Module        │   │   Module               │   │  Modules         │
 │                │   │                        │   │                  │
 │ UserController │   │ SecurityConfiguration  │   │ PostgreSQL or    │
-│ Web Models     │   │ JwtAuthFilter          │   │ DynamoDB         │
+│ Web Models     │   │ Authorization Server   │   │ DynamoDB         │
 │ UserWebMapper  │   │ OAuth2 Config          │   │ Implementation   │
 └───────┬────────┘   └───────────┬────────────┘   └───────┬──────────┘
         │                        │                        │
@@ -100,26 +101,38 @@ The project follows **Hexagonal Architecture** principles with clear separation 
                         └─────────────────┘
 ```
 
+The starters pull in the configuration, authorization server and one infrastructure module (core comes
+transitively); the endpoint module is NOT part of either starter (see "Starter Modules").
+
 ### Module Responsibilities
 
 #### 1. **Starter Modules** (`user-module-starter-*`)
 
 **Purpose**: Convenience dependencies that aggregate all required modules for a specific persistence strategy.
 
-- **user-module-starter-postgre**: Includes configuration, endpoint, and PostgreSQL infrastructure
-- **user-module-starter-dynamodb**: Includes configuration, endpoint, and DynamoDB infrastructure
-- **Usage**: Applications only need to depend on one starter module
-- **Auto-configuration**: Automatically imports the appropriate UserModuleAutoConfiguration
+- **user-module-starter-postgre**: Includes configuration, authorization server and PostgreSQL infrastructure (core
+  transitively)
+- **user-module-starter-dynamodb**: Includes configuration, authorization server and DynamoDB infrastructure (core
+  transitively); no spring-jdbc on its classpath, so the authorization server keeps clients/tokens in memory
+- **Usage**: Applications depend on one starter. For the `/user` REST API they also add `user-module-endpoint` and
+  component-scan `com.comex.usermodule.endpoint` (no auto-configuration registers `UserController`/`UserWebMapper`)
+- **Auto-configuration**: Each starter registers its own `UserModuleAutoConfiguration` (`com.comex.usermodule.starter.postgre`
+  / `...starter.dynamodb`), which enables `UserProperties` and imports `UserConfiguration`, the repository
+  configuration, `SecurityConfiguration` and `OAuth2GoogleConfiguration`. The PostgreSQL one declares
+  `@EnableJpaRepositories`/`@EntityScan` for the module's own packages, which switches Boot's JPA auto-scan off for
+  the application (list your own packages explicitly)
 
 #### 2. **Core Module** (`user-module-core`)
 
 **Purpose**: Technology-agnostic business logic and domain models. This module has **zero** Spring dependencies (except for testing).
 
-- **Domain**: Business entities (`User`, `Role`, `Permission`)
-- **Service**: Business logic (`UserService`, `UserAuthenticationService`, `UserVerificationService`, `JwtService`)
-- **Port**: Interfaces for external dependencies (`UserRepository`, `EventPublisher`, `UserAuthenticator`, `PasswordEncoder`)
-- **DTO**: Data transfer objects (`CreateUserDto`, `LoginUserDto`)
-- **Event**: Domain events (`UserCreatedEvent`, `UserVerifiedEvent`)
+- **Domain**: Business entities (`User`, `Role` with its permission strings, `UserStatus`)
+- **Service**: Business logic (`UserService`, `UserAuthenticationService`, `UserVerificationService`)
+- **Port**: Interfaces for external dependencies (`UserRepository`, `EventPublisher`, `UserAuthenticator`,
+  `UserGoogleAuthenticator`, `PasswordEncoder`, `AccessTokenIssuer` - `String issue(User)`, implemented by the
+  authorization server module)
+- **DTO**: Data transfer objects (`CreateUserDto`, `LoginUserDto`, `LoginUserOAuth2Dto`)
+- **Event**: Domain events (`UserEvent` base, `UserCreatedEvent`, `UserVerifiedEvent`)
 - **Exception**: Business exceptions (`UserException`, `UserExceptionKey`)
 - **Mapper**: Domain object mappers (`UserMapper`)
 
@@ -154,36 +167,47 @@ The project follows **Hexagonal Architecture** principles with clear separation 
 
 **Purpose**: Auto-configuration, security setup, and bean wiring.
 
-- Auto-configuration classes (`UserConfiguration`)
-- Spring Security configuration (`SecurityConfiguration`) - provides the default stateless JWT API
-  `SecurityFilterChain` (`userModuleSecurityFilterChain`), guarded by the module's own
-  `@ConditionalOnMissingApplicationSecurityFilterChain`: it backs off when the application defines a
-  `SecurityFilterChain`, but ignores the module's own chains (bean names prefixed `userModule`)
+- Auto-configuration classes (`UserConfiguration`; imported by the starters, not listed in `AutoConfiguration.imports`)
+- Spring Security configuration (`SecurityConfiguration`) - only the BCrypt `PasswordEncoder`, the
+  `AuthenticationProvider`, the `AuthenticationManager` and the `UserAuthenticator` (`UserSpringAuthenticator`,
+  behind `POST /user/login`, hands out the token from `AccessTokenIssuer`). The default API chain lives in the
+  authorization server module; this module still owns `@ConditionalOnMissingApplicationSecurityFilterChain`, which
+  backs off when the application defines a `SecurityFilterChain` but ignores the module's own chains (bean names
+  prefixed `userModule`)
 - Google login chain (`OAuth2GoogleConfiguration.userModuleGoogleLoginSecurityFilterChain`) - separate,
   session-based chain for `/oauth2/authorization/**` and `/login/oauth2/**`, registered via
   `@ConditionalOnOAuth2ClientRegistration` whenever `spring.security.oauth2.client.registration.*` is set. It is
   kept even when the application replaces the API chain
-- JWT authentication filter (`JwtAuthFilter`)
 - OAuth2 configuration (`OAuth2GoogleConfiguration`, `OAuth2LoginSuccessHandler`, `UserGoogleSpringAuthenticator`)
-- Security adapters (`UserGoogleSpringAuthenticator` - implements core ports)
+- Security adapters (`UserSpringAuthenticator`, `UserGoogleSpringAuthenticator` - implement core ports;
+  `PasswordEncoderAdapter`; `EventPublisherMock`, the default `EventPublisher`, which only logs)
 - Configuration properties (`UserProperties`)
 - Bean definitions and conditional configurations
 
-#### 6. **Authorization Server Module** (`user-module-authorization-server`, optional)
+#### 6. **Authorization Server Module** (`user-module-authorization-server`, mandatory)
 
-**Purpose**: OAuth 2.1 authorization server so MCP clients (Claude Code, claude.ai connectors, MCP Inspector) can
-obtain tokens through the standard MCP flow, with the human login delegated to the Google login chain. Added by
-applications explicitly (not pulled in by the starters) and inert until `user.oauth2.authorization-server.enabled=true`.
-Built on Spring Authorization Server (part of Spring Security 7) plus
-`org.springaicommunity:mcp-authorization-server` (open Dynamic Client Registration, `resource` parameter → `aud`).
+**Purpose**: OAuth 2.1 authorization server, the ONE issuer of every token the module hands out: `POST /user/login`,
+the Google login redirect `?token=`, the `password` grant and the MCP flow (Claude Code, claude.ai connectors, MCP
+Inspector, human login delegated to the Google login chain). Both starters depend on it; there is no `enabled`
+switch, and `user.oauth2.authorization-server.issuer` is required (startup fails with
+"user.oauth2.authorization-server.issuer must be set"). Built on Spring Authorization Server (part of Spring
+Security 7) plus `org.springaicommunity:mcp-authorization-server` (open Dynamic Client Registration).
 
 - `UserModuleAuthorizationServerAutoConfiguration` (registered through `AutoConfiguration.imports`, ordered before
   Boot's authorization-server auto-configurations and after the JDBC ones) - chain
   `userModuleAuthorizationServerSecurityFilterChain` (`HIGHEST_PRECEDENCE + 10`, session-based) for the OAuth2
   endpoints, `/.well-known/openid-configuration` and the protected resource metadata; unauthenticated HTML requests
-  are sent to `login-path` (Google), and the saved request is resumed by `OAuth2LoginSuccessHandler`
+  are sent to `login-path` (Google), and the saved request is resumed by `OAuth2LoginSuccessHandler`. It also
+  registers the default stateless API chain `userModuleSecurityFilterChain` (`API_CHAIN_BEAN_NAME`):
+  `oauth2ResourceServer().jwt()` with the module decoder/converter, JSON `401`/`403`, public `POST /user`,
+  `POST /user/login`, `GET /user/verify`, `/oauth2/**`, `/login/oauth2/**`, Swagger; guarded by
+  `@ConditionalOnMissingApplicationSecurityFilterChain`
+- `JwtAccessTokenIssuer` - implements the core `AccessTokenIssuer` port with the `JwtEncoder` bean
+  `userModuleJwtEncoder` (RS256, the server's JWK): `iss`, `sub`=email, `email`, `roles`, `aud`=every resource,
+  `iat`/`exp` (`access-token-ttl`). Used by `UserSpringAuthenticator` and `UserGoogleSpringAuthenticator`
 - `AuthorizationServerProperties` (`user.oauth2.authorization-server.*`): issuer, resources, scopes, allowed
-  redirect hosts, token TTLs, consent, login path, signing key (`RsaJwkFactory`: PKCS#8 PEM or generated)
+  redirect hosts, token TTLs, consent, login path, first-party client id, signing key (`RsaJwkFactory`: PKCS#8 PEM
+  or generated)
 - `DcrClientRegistrationValidator` - redirect URIs required, hosts allow-listed (loopback: any port/http, others
   https); tolerates a `scope` in the registration unlike Spring's default validator
 - `UserModuleRegisteredClientConverter` - DCR clients get PKCE, configured consent/TTLs, rotated refresh tokens, the
@@ -191,10 +215,19 @@ Built on Spring Authorization Server (part of Spring Security 7) plus
 - `PublicClientRefreshTokenGenerator` + `userModuleTokenGenerator` - Spring refuses refresh tokens to public clients
   on the code grant; MCP clients need them, so the module supplies its own generator chain (JWT + refresh)
 - `PublicClientRefreshTokenAuthenticationConverter` / `...Provider` - Spring authenticates public clients only on
-  the PKCE code exchange; these accept `client_id`-only `refresh_token` requests (provider inserted first so
-  Spring's PKCE provider does not demand a `code_verifier`)
-- `UserModuleAccessTokenCustomizer` - access tokens carry `sub`=email, `email`, `name`, `roles` (comma-joined
-  authorities from `UserService`, same shape as `JwtService`) and fall back to the configured resources as `aud`
+  the PKCE code exchange; these accept `client_id`-only `refresh_token` and `password` requests (provider inserted
+  first so Spring's PKCE provider does not demand a `code_verifier`)
+- `PasswordGrantAuthenticationToken` / `...Converter` / `...Provider` - `grant_type=password&username=<email>&password=…
+  &client_id=<first-party client>` on `/oauth2/token`: credentials checked by the module's `AuthenticationManager`
+  (BCrypt), tokens from `userModuleTokenGenerator`, authorization persisted (refresh works, rotated). Wrong password
+  → `400 invalid_grant`; a client without the `password` grant (every DCR/MCP client) → `400 unauthorized_client`
+- `FirstPartyClientRegistrar` (`SmartInitializingSingleton`) - upserts the `first-party-client-id` public client:
+  grants `password` + `refresh_token`, no PKCE, no consent, configured TTLs, rotated refresh tokens; blank id = none
+- `UserModuleAccessTokenCustomizer` - access tokens carry `sub`=email, `email`, `name` (Google principals), `roles` (comma-joined
+  authorities from `UserService`, same shape as `JwtAccessTokenIssuer`) and ALWAYS `aud` = every configured
+  resource, whatever `resource` the client sent (overwrites Spring's `client_id` default and the MCP
+  resource-indicator customizer). The audience is a mutable `ArrayList` on purpose: the JDBC authorization store's
+  Jackson validator refuses `java.util.ImmutableCollections`, so `List.of`/`toList()` breaks every later refresh
 - `resource` package, for applications protecting an endpoint: `ProtectedResources` (RFC 9728 documents, audience
   matching), `ProtectedResourceMetadataFilter` (serves `/.well-known/oauth-protected-resource[/<path>]`, placed
   right after `CorsFilter` so it precedes Spring Security's own metadata filter), `BearerResourceMetadataEntryPoint`
@@ -214,7 +247,8 @@ Built on Spring Authorization Server (part of Spring Security 7) plus
 
 The module uses Spring Boot's **Auto-Configuration** mechanism to be easily integrated:
 
-- `UserModuleAutoConfiguration` - Main auto-configuration entry point
+- `UserModuleAutoConfiguration` (one per starter) - Main auto-configuration entry point
+- `UserModuleAuthorizationServerAutoConfiguration` - registered separately by the authorization server module
 - Provides conditional beans (`@ConditionalOnMissingBean`)
 - Can be customized by consuming applications
 
@@ -233,8 +267,10 @@ user-module/                                    # Parent Maven module (aggregato
 │       │   └── UserStatus.java
 │       ├── dto/                                # Data transfer objects
 │       │   ├── CreateUserDto.java
-│       │   └── LoginUserDto.java
+│       │   ├── LoginUserDto.java
+│       │   └── LoginUserOAuth2Dto.java
 │       ├── event/                              # Domain events
+│       │   ├── UserEvent.java
 │       │   ├── UserCreatedEvent.java
 │       │   └── UserVerifiedEvent.java
 │       ├── exception/                          # Business exceptions
@@ -246,12 +282,13 @@ user-module/                                    # Parent Maven module (aggregato
 │       │   ├── UserRepository.java
 │       │   ├── EventPublisher.java
 │       │   ├── UserAuthenticator.java
-│       │   └── PasswordEncoder.java
+│       │   ├── UserGoogleAuthenticator.java
+│       │   ├── PasswordEncoder.java
+│       │   └── AccessTokenIssuer.java
 │       └── service/                            # Business services
 │           ├── UserService.java
 │           ├── UserAuthenticationService.java
-│           ├── UserVerificationService.java
-│           └── JwtService.java
+│           └── UserVerificationService.java
 │
 ├── user-module-infrastructure-postgre/         # PostgreSQL persistence
 │   ├── pom.xml
@@ -271,8 +308,9 @@ user-module/                                    # Parent Maven module (aggregato
 │       ├── user-master.yml
 │       ├── 0_create-user-table.yml
 │       ├── 1_create-role-and-permission-tables.yml
-│       ├── insert-initial-roles.yml
-│       └── insert-initial-users.yml
+│       ├── 2_create-oauth2-authorization-server-tables.yml
+│       ├── insert-initial-roles.yml (+ .sql)
+│       └── insert-initial-users.yml (+ .sql)
 │
 ├── user-module-infrastructure-dynamodb/        # DynamoDB persistence
 │   ├── pom.xml
@@ -302,17 +340,23 @@ user-module/                                    # Parent Maven module (aggregato
 ├── user-module-configuration/                  # Auto-configuration & security
 │   ├── pom.xml
 │   └── src/main/java/com/comex/usermodule/
+│       ├── adapter/
+│       │   └── PasswordEncoderAdapter.java
 │       ├── configuration/                      # Configuration classes
 │       │   ├── UserConfiguration.java
 │       │   ├── SecurityConfiguration.java
 │       │   ├── OAuth2GoogleConfiguration.java
-│       │   └── UserProperties.java
+│       │   ├── UserProperties.java
+│       │   ├── ConditionalOnMissingApplicationSecurityFilterChain.java (+ OnMissing...Condition)
+│       │   └── ConditionalOnOAuth2ClientRegistration.java (+ OnOAuth2ClientRegistrationCondition)
+│       ├── infrastructure/messaging/
+│       │   └── EventPublisherMock.java
 │       └── security/                           # Security components
-│           ├── jwt/JwtAuthFilter.java
+│           ├── UserSpringAuthenticator.java
 │           ├── UserGoogleSpringAuthenticator.java
 │           └── OAuth2LoginSuccessHandler.java
 │
-├── user-module-authorization-server/          # Optional OAuth 2.1 authorization server (MCP)
+├── user-module-authorization-server/          # OAuth 2.1 authorization server (every token, default API chain)
 │   ├── pom.xml
 │   └── src/main/java/com/comex/usermodule/authorizationserver/
 │       ├── UserModuleAuthorizationServerAutoConfiguration.java
@@ -320,6 +364,11 @@ user-module/                                    # Parent Maven module (aggregato
 │       ├── DcrClientRegistrationValidator.java
 │       ├── UserModuleRegisteredClientConverter.java
 │       ├── UserModuleAccessTokenCustomizer.java
+│       ├── JwtAccessTokenIssuer.java
+│       ├── PasswordGrantAuthenticationToken.java
+│       ├── PasswordGrantAuthenticationConverter.java
+│       ├── PasswordGrantAuthenticationProvider.java
+│       ├── FirstPartyClientRegistrar.java
 │       ├── PublicClientRefreshTokenGenerator.java
 │       ├── PublicClientRefreshTokenAuthenticationConverter.java
 │       ├── PublicClientRefreshTokenAuthenticationProvider.java
@@ -331,14 +380,14 @@ user-module/                                    # Parent Maven module (aggregato
 │           └── ResourceAudienceValidator.java
 │
 ├── user-module-starter-postgre/               # PostgreSQL starter
-│   ├── pom.xml                                 # Aggregates: configuration, endpoint, infra-postgre
+│   ├── pom.xml                                 # Aggregates: configuration, authorization-server, infra-postgre
 │   └── src/main/java/com/comex/usermodule/starter/postgre/
 │       ├── UserModuleAutoConfiguration.java
 │       └── configuration/
 │           └── UserPostgreRepositoryConfiguration.java
 │
 └── user-module-starter-dynamodb/              # DynamoDB starter
-    ├── pom.xml                                 # Aggregates: configuration, endpoint, infra-dynamodb
+    ├── pom.xml                                 # Aggregates: configuration, authorization-server, infra-dynamodb
     └── src/main/java/com/comex/usermodule/starter/dynamodb/
         ├── UserModuleAutoConfiguration.java
         └── configuration/
@@ -357,7 +406,7 @@ user-module/                                    # Parent Maven module (aggregato
 
 ### Naming Conventions
 
-1. **Domain Models**: Simple names (`User`, `Role`, `Permission`)
+1. **Domain Models**: Simple names (`User`, `Role`, `UserStatus`)
 2. **JPA Entities**: Suffixed with `Entity` (`UserEntity`, `RoleEntity`)
 3. **DTOs**: Suffixed with `Dto` (`CreateUserDto`)
 4. **Request Models**: Suffixed with `Request` (`CreateUserRequest`, `LoginUserRequest`)
@@ -417,7 +466,7 @@ The user-module supports **two persistence implementations** that can be switche
 | **Relationships** | Many-to-many tables                          | Embedded documents               |
 | **Migrations**    | Liquibase                                    | Manual table creation            |
 | **Queries**       | SQL/JPA                                      | Key-based + GSI                  |
-| **Configuration** | UserConfiguration                            | DynamoDbConfiguration            |
+| **Configuration** | UserPostgreRepositoryConfiguration           | UserDynamoRepositoryConfiguration |
 
 ### PostgreSQL Implementation (Default)
 
@@ -432,8 +481,11 @@ The user-module supports **two persistence implementations** that can be switche
 
 1. `0_create-user-table.yml` - Users table
 2. `1_create-role-and-permission-tables.yml` - Roles and permissions
-3. `insert-initial-roles.yml` - Default roles
-4. `insert-initial-users.yml` - Default users
+3. `2_create-oauth2-authorization-server-tables.yml` - Authorization server tables (registered clients,
+   authorizations, consents)
+4. `insert-initial-roles.yml` - Default roles (`ROLE_USER`, `ROLE_ADMIN`)
+5. `insert-initial-users.yml` - Default users (`test-user-1..3` with `ROLE_USER`, `admin` with `ROLE_ADMIN`, all
+   `VERIFIED`)
 
 #### Key Tables
 
@@ -442,6 +494,8 @@ The user-module supports **two persistence implementations** that can be switche
 - **permission** - Role permissions
 - **users_roles** - Many-to-many join table (user to roles)
 - **roles_permissions** - Many-to-many join table (role to permissions)
+- **oauth2_registered_client**, **oauth2_authorization**, **oauth2_authorization_consent** - Spring Authorization
+  Server schema (JDBC persistence of the authorization server)
 
 #### Configuration
 
@@ -511,12 +565,16 @@ All endpoints require Bearer authentication except public ones.
 | POST   | `/user`                    | Create new user   | No            |
 | POST   | `/user/login`              | User login        | No            |
 | GET    | `/user/verify?code={code}` | Verify user email | No            |
+| GET    | `/user?email={email}`      | Find user by email | Yes          |
 
 ### Security Configuration
 
-- **JWT Authentication**: Bearer token in Authorization header
+- **JWT Authentication**: Bearer token in Authorization header; every token is the RS256 JWT of the module's
+  authorization server, validated by `oauth2ResourceServer().jwt()` (signature, issuer, audience)
+- **Password login**: `POST /user/login` (`{"token": ...}`) or, with `first-party-client-id` set, the `password` grant
+  on `/oauth2/token` (access + rotated refresh token)
 - **OAuth2 Google Login**: Entry point `/oauth2/authorization/google`; active only when
-  `spring.security.oauth2.client.registration.google.client-id/client-secret` are set. On success the module JWT is
+  `spring.security.oauth2.client.registration.google.client-id/client-secret` are set. On success the access token is
   either appended as `?token=` to `user.oauth2.success-redirect-url` or, when that property is blank, written as
   `{"token": ...}` to the response body. Google users are created via `UserService.createOAuth2User` and are always
   `VERIFIED`. `UserGoogleSpringAuthenticator` enforces `user.oauth2.allowed-domains` (empty list = anyone may sign
@@ -524,12 +582,14 @@ All endpoints require Bearer authentication except public ones.
   accounts whose `email_verified` claim is `false`. Rejections redirect to `success-redirect-url?error=<code>` or
   return a JSON error with status 401/403.
 - **Public endpoints**: `POST /user`, `POST /user/login`, `GET /user/verify`, `/oauth2/**`, `/login/oauth2/**`, Swagger
-- **Protected endpoints**: Everything else; secured with JWT filter, JSON `401`/`403` responses
+- **Protected endpoints**: Everything else; secured as an OAuth2 resource server, JSON `401`/`403` responses
 - **Customization**: An application-defined `SecurityFilterChain` bean replaces the module's API chain
-  (`userModuleSecurityFilterChain`) entirely; the Google login chain is kept. After Google login,
-  `OAuth2LoginSuccessHandler` resumes a saved request (e.g. an authorization server's `/oauth2/authorize`) when one
-  exists in the session instead of issuing the module JWT
-- **MCP clients**: with `user-module-authorization-server` enabled, `/oauth2/authorize`, `/oauth2/token`,
+  (`userModuleSecurityFilterChain`) entirely; the Google login and authorization server chains are kept. The
+  replacement validates tokens with `oauth2ResourceServer().jwt()` and the beans `JWT_DECODER_BEAN_NAME` /
+  `JWT_AUTHENTICATION_CONVERTER_BEAN_NAME` (see README). After Google login, `OAuth2LoginSuccessHandler` resumes a
+  saved request (e.g. an authorization server's `/oauth2/authorize`) when one exists in the session instead of
+  issuing a token
+- **MCP clients**: `/oauth2/authorize`, `/oauth2/token`,
   `/oauth2/register`, `/oauth2/jwks`, `/.well-known/oauth-authorization-server` and
   `/.well-known/oauth-protected-resource[/<path>]` are served by the authorization server chain; the application
   protects its MCP endpoint with the module's `JwtDecoder`, converter and entry point beans (see README)
@@ -544,22 +604,21 @@ Standard Spring Boot configuration including datasource, OAuth2 client registrat
 
 Configured via `@ConfigurationProperties` with prefix `user`:
 - **verification-required**: Boolean flag for email verification
-- **jwt.jwt-secret-key**: Secret key for JWT token generation
-- **jwt.jwt-expiration**: Token expiration in milliseconds (default: 3600000 = 1 hour)
 - **persistence.type**: Choose between `postgresql` (default) or `dynamodb`
 - **dynamodb.table-name**: DynamoDB table name (default: users)
-- **dynamodb.region**: AWS region for DynamoDB
+- **dynamodb.region**: AWS region for DynamoDB (default: us-east-1)
 - **dynamodb.endpoint**: Optional endpoint for local testing
-- **oauth2.success-redirect-url**: Optional URL the browser is redirected to after Google login, with the JWT as a
-  `token` query parameter. When blank the JWT is returned as JSON in the response body.
+- **oauth2.success-redirect-url**: Optional URL the browser is redirected to after Google login, with the access token as a
+  `token` query parameter. When blank the token is returned as JSON in the response body.
 - **oauth2.allowed-domains**: Optional list of email domains allowed to sign in with Google (case-insensitive, exact
   match). Empty or unset means every Google account is accepted.
 
 ### Authorization Server Properties (`AuthorizationServerProperties`, module `user-module-authorization-server`)
 
 Prefix `user.oauth2.authorization-server`:
-- **enabled** (default `false`), **issuer** (public base URL, required), **resources** (protected resource paths,
-  e.g. `/mcp`), **scopes-supported** (empty = no consent screen), **allowed-redirect-hosts** (default
+- **issuer** (public base URL, required), **resources** (protected resource paths, e.g. `/mcp`, `/api`; every token
+  carries all of them as `aud`), **first-party-client-id** (public client with the `password` grant; blank = none),
+  **scopes-supported** (empty = no consent screen), **allowed-redirect-hosts** (default
   `localhost, 127.0.0.1, claude.ai`), **access-token-ttl** (`1h`), **refresh-token-ttl** (`30d`),
   **consent-required** (`true`), **login-path** (`/oauth2/authorization/google`), **jwk.private-key-pem** (PKCS#8;
   blank = ephemeral key), **jwk.kid**
@@ -606,7 +665,7 @@ Applications choose persistence strategy by selecting the appropriate **starter 
 <dependency>
     <groupId>com.comex</groupId>
     <artifactId>user-module-starter-postgre</artifactId>
-    <version>0.0.8-SNAPSHOT</version>
+    <version>0.0.10-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -615,7 +674,7 @@ Applications choose persistence strategy by selecting the appropriate **starter 
 <dependency>
     <groupId>com.comex</groupId>
     <artifactId>user-module-starter-dynamodb</artifactId>
-    <version>0.0.8-SNAPSHOT</version>
+    <version>0.0.10-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -632,7 +691,8 @@ The starter module automatically includes the correct infrastructure module and 
 **In Module POM** (e.g., `user-module-core/pom.xml`):
 - Reference dependencies without version (inherited from parent)
 - Add module-to-module dependencies in `<dependencies>` section
-- Respect dependency flow: `starter → configuration/endpoint/infrastructure → core`
+- Respect dependency flow: `starter → authorization-server → configuration → core`, `starter → infrastructure → core`,
+  `endpoint → core`
 
 ## Testing Strategy
 
@@ -670,7 +730,8 @@ The **user-module-core** module exports its test classes as a **test-jar** artif
 </dependency>
 ```
 
-This allows endpoint and infrastructure tests to use `UserTestInventory` for creating test data.
+This allows endpoint, configuration and authorization server tests to use `UserTestInventory` for creating test
+data (the infrastructure modules have their own `helper/UserTestInventory`).
 
 ### Testing Tools
 
@@ -678,7 +739,7 @@ This allows endpoint and infrastructure tests to use `UserTestInventory` for cre
 - **Mockito** - Mocking framework for external dependencies (ports)
 - **AssertJ** - Fluent assertion library
 - **Spring Boot Test** - Integration testing support
-- **Testcontainers** - PostgreSQL container for integration tests
+- **Testcontainers** - PostgreSQL and LocalStack (DynamoDB) containers for integration tests
 - **MockMvc** - REST endpoint testing
 
 ### Global Testing Conventions
@@ -757,8 +818,7 @@ src/test/java/com/comex/usermodule/core/
 └── service/
     ├── UserServiceTest.java            # User CRUD operations
     ├── UserAuthenticationServiceTest.java  # Authentication delegation
-    ├── UserVerificationServiceTest.java    # Email verification
-    └── JwtServiceTest.java              # JWT token operations
+    └── UserVerificationServiceTest.java    # Email verification
 ```
 
 #### Mocking Strategy
@@ -767,7 +827,7 @@ src/test/java/com/comex/usermodule/core/
 
 **What to mock:**
 
-- ✅ Ports (interfaces in `core/port/`): `UserRepository`, `EventPublisher`, `UserAuthenticator`
+- ✅ Ports (interfaces in `core/port/`): `UserRepository`, `EventPublisher`, `UserAuthenticator`, `PasswordEncoder`
 - ✅ External configuration: `Boolean verificationRequired`
 - ❌ Internal utilities: `UserMapper`
 - ❌ Domain objects: `User`, `Role`
@@ -780,7 +840,7 @@ src/test/java/com/comex/usermodule/core/
 
 **Setup pattern:**
 
-Mock ports (UserRepository, EventPublisher) but use real implementations for utilities (UserMapper with BCryptPasswordEncoder). Initialize the system under test (sut) in @BeforeEach with required dependencies.
+Mock ports (UserRepository, EventPublisher, PasswordEncoder) but use real implementations for utilities (a real UserMapper built on the mocked PasswordEncoder). Initialize the system under test (sut) in @BeforeEach with required dependencies.
 
 ### Infrastructure Module Testing
 
@@ -793,10 +853,13 @@ src/test/java/com/comex/usermodule/infrastructure/persistence/
 ├── postgre/
 │   ├── AbstractPostgresIntegrationTest.java   # Base class for PostgreSQL tests
 │   ├── PostgresTestConfiguration.java         # Test configuration
-│   └── UserPostgreRepositoryTest.java         # PostgreSQL integration tests
+│   ├── UserPostgreRepositoryTest.java         # PostgreSQL integration tests
+│   └── helper/UserTestInventory.java
 └── dynamodb/
     ├── AbstractDynamoDbIntegrationTest.java   # Base class for DynamoDB tests
-    └── UserDynamoRepositoryTest.java          # DynamoDB integration tests
+    ├── DynamoDbTestConfiguration.java         # Test configuration
+    ├── UserDynamoRepositoryTest.java          # DynamoDB integration tests
+    └── helper/UserTestInventory.java
 ```
 
 #### Integration Test Characteristics
@@ -813,12 +876,12 @@ src/test/java/com/comex/usermodule/infrastructure/persistence/
 **Setup:**
 - Uses `@DataJpaTest` for JPA slice testing
 - Uses `PostgreSQLContainer` from Testcontainers
-- Imports only `PostgresTestConfiguration` for minimal bean setup
-- Liquibase migrations run automatically
+- Loads only `PostgresTestConfiguration` (`@ContextConfiguration`) for minimal bean setup
+- Liquibase is disabled; Hibernate creates the schema (`ddl-auto=create-drop`)
 - Much faster than full `@SpringBootTest`
 
 **Base Class (AbstractPostgresIntegrationTest.java):**
-- Uses `@DataJpaTest`, `@AutoConfigureTestDatabase`, `@Import(PostgresTestConfiguration.class)`, `@Testcontainers`
+- Uses `@DataJpaTest`, `@AutoConfigureTestDatabase(replace = NONE)`, `@ContextConfiguration(classes = PostgresTestConfiguration.class)`, `@Testcontainers`
 - Configures PostgreSQL container (postgres:16-alpine)
 - Uses `@DynamicPropertySource` to inject connection properties
 
@@ -838,7 +901,7 @@ src/test/java/com/comex/usermodule/infrastructure/persistence/
 
 **Base Class (AbstractDynamoDbIntegrationTest.java):**
 - Uses `@ExtendWith(SpringExtension.class)`, `@Testcontainers`, `@Import(DynamoDbTestConfiguration.class)`
-- Configures LocalStack container for DynamoDB
+- Configures LocalStack container for DynamoDB (`localstack/localstack:3.0`)
 - Uses `@DynamicPropertySource` to inject DynamoDB connection properties
 - Uses `@BeforeAll` to create users table with GSI on verificationCode
 
@@ -892,23 +955,20 @@ Tests for **user-module-configuration** live in `user-module-configuration/src/t
 
 ```
 ├── configuration/
-│   └── SecurityConfigurationTest.java       # WebApplicationContextRunner tests for the security chain
+│   └── SecurityConfigurationTest.java       # WebApplicationContextRunner tests for the Google login chain
 └── security/
-    ├── OAuth2LoginSuccessHandlerTest.java   # Redirect vs JSON token hand-off, missing email
+    ├── OAuth2LoginSuccessHandlerTest.java   # Redirect vs JSON hand-off, saved request, rejections
     ├── UserGoogleSpringAuthenticatorTest.java
-    ├── UserSpringAuthenticatorTest.java
-    └── jwt/JwtAuthFilterTest.java
+    └── UserSpringAuthenticatorTest.java
 ```
 
 **Key Principles:**
-- Security adapters (`JwtAuthFilter`, success handler, authenticators) are unit-tested with Mockito and Spring's
+- Security adapters (success handler, authenticators) are unit-tested with Mockito and Spring's
   `MockHttpServletRequest`/`MockHttpServletResponse`; core services are mocked as ports
 - `SecurityConfigurationTest` uses `WebApplicationContextRunner` with the module auto-configurations plus Boot's
   `ServletWebSecurityAutoConfiguration` and `OAuth2ClientAutoConfiguration`. It proves that the Google login chain
   (with the OAuth2 login filter) exists only when Google client properties are set and is kept when the application
-  defines its own chain, that the API chain backs off to an application-defined `SecurityFilterChain`, and (via
-  MockMvc with `springSecurity()`) that public endpoints pass, protected endpoints return the JSON 401, and
-  `/oauth2/authorization/google` redirects to Google
+  defines its own chain. The default API chain is tested in the authorization server module
 - Depends on the `user-module-core` test-jar, so install core first (see "Running Endpoint Tests")
 
 ### Authorization Server Module Testing
@@ -920,6 +980,7 @@ Tests for **user-module-authorization-server** live in
 ├── UserModuleAuthorizationServerAutoConfigurationTest.java  # WebApplicationContextRunner + MockMvc, full OAuth flow,
 │                                                           # + which persistence the FULL auto-config picks
 ├── UserModuleAccessTokenCustomizerTest.java                 # Claims shaping (sub/email/roles/aud)
+├── JwtAccessTokenIssuerTest.java                            # Login token claims, RS256 signature
 ├── JdbcPersistenceIntegrationTest.java                      # Testcontainers PostgreSQL + Liquibase + JDBC services
 └── resource/
     ├── ProtectedResourcesTest.java
@@ -932,13 +993,17 @@ Tests for **user-module-authorization-server** live in
   authorization-server auto-configurations and drives the real protocol with MockMvc: metadata documents, Dynamic
   Client Registration (allowed vs rejected redirect hosts, tolerated `scope`), unauthenticated `/oauth2/authorize`
   redirecting to Google, the authorization code + PKCE exchange as a Google-authenticated user, token claims,
-  refresh-token rotation, loopback port wildcard and audience rejection by the provided `JwtDecoder`. It also pins
-  the persistence choice on the full auto-configuration: JDBC when Boot auto-configures a `JdbcTemplate` (its own
-  Testcontainers PostgreSQL + the changelog), in-memory without one
+  refresh-token rotation, loopback port wildcard and audience rejection by the provided `JwtDecoder`. It also covers
+  the required issuer, `aud` = every resource whatever `resource` was sent, the `password` grant (tokens, wrong
+  password → `invalid_grant`, DCR client → `unauthorized_client`, no first-party client without the id), the login
+  token being accepted like any other, the default API chain (accepts the server's tokens, backs off to an
+  application chain), and pins the persistence choice on the full auto-configuration: JDBC when Boot
+  auto-configures a `JdbcTemplate` (its own Testcontainers PostgreSQL + the changelog; a password-grant
+  authorization round-trips and refreshes through the JDBC store), in-memory without one
 - Spring's authorization endpoint reads GET parameters from the query string, so MockMvc requests to
   `/oauth2/authorize` must use `queryParam`, not `param`
-- `JdbcPersistenceIntegrationTest` applies `user-master.yml` to a real PostgreSQL (this is the only test that runs
-  the Liquibase changelog) and round-trips a client, an authorization with an `OAuth2AuthenticationToken` principal
+- `JdbcPersistenceIntegrationTest` applies `user-master.yml` to a real PostgreSQL (with the JDBC persistence test
+  above, the only tests that run the Liquibase changelog) and round-trips a client, an authorization with an `OAuth2AuthenticationToken` principal
   and a consent through the JDBC implementations
 - Depends on the `user-module-core` test-jar and on `user-module-infrastructure-postgre` (changelog), so install
   those first

@@ -1,7 +1,5 @@
 package com.comex.usermodule.core.exception;
 
-import static io.jsonwebtoken.lang.Strings.hasText;
-
 import java.util.Collections;
 import java.util.Map;
 
@@ -44,7 +42,7 @@ public class UserException extends RuntimeException {
 	public UserException(@NonNull UserExceptionKey errorKey, @NonNull Map<String, String> params,
 		String message, Throwable cause) {
 
-		super("Error Key [" + errorKey.name() + "]" + (hasText(message) ? "; " + message : ""), cause);
+		super("Error Key [" + errorKey.name() + "]" + (message != null && !message.isBlank() ? "; " + message : ""), cause);
 
 		this.errorKey = errorKey;
 		this.params = params;

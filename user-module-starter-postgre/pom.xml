@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>com.comex</groupId>
 		<artifactId>user-module</artifactId>
-		<version>0.0.9-SNAPSHOT</version>
+		<version>0.0.10-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>user-module-starter-postgre</artifactId>
@@ -18,6 +18,11 @@
 		<dependency>
 			<groupId>com.comex</groupId>
 			<artifactId>user-module-configuration</artifactId>
+		</dependency>
+		<!-- The authorization server issues every token the module hands out -->
+		<dependency>
+			<groupId>com.comex</groupId>
+			<artifactId>user-module-authorization-server</artifactId>
 		</dependency>
 		<!-- Lombok -->
 		<dependency>

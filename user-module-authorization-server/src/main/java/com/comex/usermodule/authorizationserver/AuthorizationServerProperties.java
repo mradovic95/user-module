@@ -17,18 +17,15 @@ public class AuthorizationServerProperties {
 
 	public static final String PREFIX = "user.oauth2.authorization-server";
 
-	/** Switches the authorization server on. Off by default. */
-	private boolean enabled = false;
-
 	/**
 	 * Public base URL of this application, e.g. {@code https://api.example.com} or {@code http://localhost:8081}.
-	 * Used as the token issuer and as the base of every protected resource URI. Required when enabled.
+	 * Used as the token issuer and as the base of every protected resource URI. Required.
 	 */
 	private String issuer;
 
 	/**
 	 * Paths (relative to the issuer) of the protected resources this server issues tokens for, e.g. {@code /mcp}.
-	 * Each one gets a protected resource metadata document and is an accepted {@code aud} value.
+	 * Each one gets a protected resource metadata document, and every issued token carries all of them as {@code aud}.
 	 */
 	private List<String> resources = new ArrayList<>();
 
@@ -55,6 +52,12 @@ public class AuthorizationServerProperties {
 
 	/** Path the browser is sent to when a user must log in; the module's Google login by default. */
 	private String loginPath = "/oauth2/authorization/google";
+
+	/**
+	 * Client id of the application's own client (e.g. its frontend), registered at startup as a public client allowed
+	 * the {@code password} grant on {@code /oauth2/token}. Blank means no first-party client and no password grant.
+	 */
+	private String firstPartyClientId;
 
 	private Jwk jwk = new Jwk();
 

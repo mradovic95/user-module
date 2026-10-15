@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>com.comex</groupId>
 		<artifactId>user-module</artifactId>
-		<version>0.0.9-SNAPSHOT</version>
+		<version>0.0.10-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>user-module-core</artifactId>
@@ -30,20 +30,6 @@
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
-		</dependency>
-
-		<!-- JWT -->
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-api</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-impl</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-jackson</artifactId>
 		</dependency>
 
 		<!-- Test -->

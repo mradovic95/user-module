@@ -10,8 +10,8 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
+import com.comex.usermodule.core.port.AccessTokenIssuer;
 import com.comex.usermodule.core.port.UserGoogleAuthenticator;
-import com.comex.usermodule.core.service.JwtService;
 import com.comex.usermodule.core.service.UserService;
 import com.comex.usermodule.security.OAuth2LoginSuccessHandler;
 import com.comex.usermodule.security.UserGoogleSpringAuthenticator;
@@ -39,9 +39,9 @@ public class OAuth2GoogleConfiguration {
 
 	@ConditionalOnMissingBean
 	@Bean
-	public UserGoogleAuthenticator userGoogleAuthenticator(UserService userService, JwtService jwtService,
-		UserProperties userProperties) {
-		return new UserGoogleSpringAuthenticator(userService, jwtService,
+	public UserGoogleAuthenticator userGoogleAuthenticator(UserService userService,
+		AccessTokenIssuer accessTokenIssuer, UserProperties userProperties) {
+		return new UserGoogleSpringAuthenticator(userService, accessTokenIssuer,
 			userProperties.getOauth2().getAllowedDomains());
 	}
 

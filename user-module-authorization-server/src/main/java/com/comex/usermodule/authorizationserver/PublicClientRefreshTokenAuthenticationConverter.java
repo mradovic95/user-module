@@ -7,7 +7,6 @@ import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
@@ -19,9 +18,10 @@ import org.springframework.util.StringUtils;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * Identifies a public client on a {@code refresh_token} token request: {@code client_id} only, no secret, no
- * {@code Authorization} header. Spring's {@code PublicClientAuthenticationConverter} handles only the PKCE code
- * exchange, so without this converter a public client (every MCP client) could never refresh its tokens.
+ * Identifies a public client on a {@code refresh_token} or {@code password} token request: {@code client_id} only, no
+ * secret, no {@code Authorization} header. Spring's {@code PublicClientAuthenticationConverter} handles only the PKCE
+ * code exchange, so without this converter a public client (every MCP client, the first-party client) could never
+ * refresh its tokens or use the password grant.
  */
 public final class PublicClientRefreshTokenAuthenticationConverter implements AuthenticationConverter {
 
@@ -31,7 +31,8 @@ public final class PublicClientRefreshTokenAuthenticationConverter implements Au
 			return null;
 		}
 		MultiValueMap<String, String> parameters = formParameters(request);
-		if (!AuthorizationGrantType.REFRESH_TOKEN.getValue().equals(parameters.getFirst(OAuth2ParameterNames.GRANT_TYPE))) {
+		if (!PublicClientRefreshTokenAuthenticationProvider.isPublicClientGrant(
+			parameters.getFirst(OAuth2ParameterNames.GRANT_TYPE))) {
 			return null;
 		}
 		boolean confidentialClient = StringUtils.hasText(request.getHeader(HttpHeaders.AUTHORIZATION))

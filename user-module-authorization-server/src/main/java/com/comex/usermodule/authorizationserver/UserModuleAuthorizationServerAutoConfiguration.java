@@ -11,7 +11,6 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.security.oauth2.server.authorization.autoconfigure.servlet.OAuth2AuthorizationServerAutoConfiguration;
@@ -24,6 +23,12 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.McpDefaultJwtCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -73,6 +78,8 @@ import com.comex.usermodule.authorizationserver.resource.BearerResourceMetadataE
 import com.comex.usermodule.authorizationserver.resource.ProtectedResourceMetadataFilter;
 import com.comex.usermodule.authorizationserver.resource.ProtectedResources;
 import com.comex.usermodule.authorizationserver.resource.ResourceAudienceValidator;
+import com.comex.usermodule.configuration.ConditionalOnMissingApplicationSecurityFilterChain;
+import com.comex.usermodule.core.port.AccessTokenIssuer;
 import com.comex.usermodule.core.service.UserService;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -83,16 +90,19 @@ import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 
+import jakarta.servlet.http.HttpServletResponse;
+
 /**
- * OAuth 2.1 authorization server for MCP clients (Claude Code, claude.ai, MCP Inspector, ...), switched on with
- * {@code user.oauth2.authorization-server.enabled=true}.
+ * The module's OAuth 2.1 authorization server: the ONE issuer of every token the module hands out.
  * <p>
  * Registers its own {@link SecurityFilterChain} for the authorization server endpoints and the protected resource
  * metadata. Users log in through the module's Google login chain: an unauthenticated {@code /oauth2/authorize} is
- * saved in the session, the browser is sent to Google, and the login success handler resumes it. Issued access
- * tokens carry {@code sub}=email and {@code roles} like the module's own JWTs, and {@code aud} bound to the
- * configured protected resources. Clients register through Dynamic Client Registration (PKCE enforced, redirect
- * hosts allow-listed, refresh tokens rotated).
+ * saved in the session, the browser is sent to Google, and the login success handler resumes it. MCP clients
+ * register through Dynamic Client Registration (PKCE enforced, redirect hosts allow-listed, refresh tokens rotated);
+ * the application's own client ({@code first-party-client-id}) may also use the {@code password} grant.
+ * {@code POST /user/login} and the Google login redirect issue the same token through {@link JwtAccessTokenIssuer}.
+ * Every access token is RS256-signed and carries {@code sub}=email, {@code roles} and {@code aud}=every configured
+ * protected resource, so one token works on every resource of the application.
  * <p>
  * For applications protecting a resource with these tokens it also provides a {@link JwtDecoder}
  * ({@value #JWT_DECODER_BEAN_NAME}), a {@link JwtAuthenticationConverter} mapping the {@code roles} claim
@@ -104,7 +114,6 @@ import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 	afterName = { "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
 		"org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration" })
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-@ConditionalOnProperty(prefix = AuthorizationServerProperties.PREFIX, name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(AuthorizationServerProperties.class)
 @Import({ UserModuleAuthorizationServerAutoConfiguration.PersistenceConfiguration.class,
 	UserModuleAuthorizationServerAutoConfiguration.InMemoryPersistenceConfiguration.class })
@@ -119,6 +128,9 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 	public static final String JWT_DECODER_BEAN_NAME = "userModuleAuthorizationServerJwtDecoder";
 	public static final String JWT_AUTHENTICATION_CONVERTER_BEAN_NAME = "userModuleJwtAuthenticationConverter";
 	public static final String BEARER_ENTRY_POINT_BEAN_NAME = "userModuleBearerResourceMetadataEntryPoint";
+
+	/** Bean name of the module's default stateless API chain. */
+	public static final String API_CHAIN_BEAN_NAME = "userModuleSecurityFilterChain";
 
 	private static final String OPENID_CONFIGURATION_PATH = "/.well-known/openid-configuration";
 
@@ -145,23 +157,43 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 
 	@ConditionalOnMissingBean
 	@Bean
+	public JwtEncoder userModuleJwtEncoder(JWKSource<SecurityContext> jwkSource) {
+		return new NimbusJwtEncoder(jwkSource);
+	}
+
+	/** The token behind {@code POST /user/login} and the Google login redirect. */
+	@ConditionalOnMissingBean
+	@Bean
+	public AccessTokenIssuer userModuleAccessTokenIssuer(JwtEncoder jwtEncoder, ProtectedResources protectedResources,
+		AuthorizationServerProperties properties) {
+		return new JwtAccessTokenIssuer(jwtEncoder, protectedResources, properties.getAccessTokenTtl());
+	}
+
+	@Bean
+	public FirstPartyClientRegistrar userModuleFirstPartyClientRegistrar(
+		RegisteredClientRepository registeredClientRepository, AuthorizationServerProperties properties) {
+		return new FirstPartyClientRegistrar(registeredClientRepository, properties);
+	}
+
+	@ConditionalOnMissingBean
+	@Bean
 	public UserModuleAccessTokenCustomizer userModuleAccessTokenCustomizer(UserService userService,
 		ProtectedResources protectedResources) {
 		return new UserModuleAccessTokenCustomizer(userService, protectedResources);
 	}
 
 	/**
-	 * Signed JWT access tokens (with the MCP {@code resource} parameter as {@code aud}) plus refresh tokens for every
+	 * Signed JWT access tokens ({@code aud} = every protected resource, see the customizer) plus refresh tokens for every
 	 * client, public ones included. Replaces the generator the MCP configurer would build, which inherits Spring's
 	 * refusal to issue refresh tokens to public clients.
 	 */
 	@ConditionalOnMissingBean(OAuth2TokenGenerator.class)
 	@Bean
-	public OAuth2TokenGenerator<? extends OAuth2Token> userModuleTokenGenerator(JWKSource<SecurityContext> jwkSource,
+	public OAuth2TokenGenerator<? extends OAuth2Token> userModuleTokenGenerator(JwtEncoder jwtEncoder,
 		ObjectProvider<OAuth2TokenCustomizer<JwtEncodingContext>> jwtCustomizers) {
 		List<OAuth2TokenCustomizer<JwtEncodingContext>> customizers = jwtCustomizers.orderedStream().toList();
 		ResourceIdentifierAudienceTokenCustomizer audienceCustomizer = new ResourceIdentifierAudienceTokenCustomizer();
-		JwtGenerator jwtGenerator = new JwtGenerator(new NimbusJwtEncoder(jwkSource));
+		JwtGenerator jwtGenerator = new JwtGenerator(jwtEncoder);
 		jwtGenerator.setJwtCustomizer(context -> {
 			McpDefaultJwtCustomizer.DEFAULT_JWT_CUSTOMIZER.customize(context);
 			audienceCustomizer.customize(context);
@@ -210,7 +242,8 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 		AuthorizationServerProperties properties, AuthorizationServerSettings authorizationServerSettings,
 		RegisteredClientRepository registeredClientRepository, OAuth2AuthorizationService authorizationService,
 		OAuth2AuthorizationConsentService authorizationConsentService, ProtectedResources protectedResources,
-		ObjectProvider<CorsConfigurationSource> corsConfigurationSource) throws Exception {
+		ObjectProvider<CorsConfigurationSource> corsConfigurationSource, AuthenticationManager authenticationManager,
+		OAuth2TokenGenerator<? extends OAuth2Token> tokenGenerator) throws Exception {
 		RequestMatcher metadataMatcher = ProtectedResourceMetadataFilter.requestMatcher();
 		RequestMatcher openIdConfigurationMatcher = PathPatternRequestMatcher.withDefaults()
 			.matcher(OPENID_CONFIGURATION_PATH);
@@ -238,6 +271,11 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 							.add(new PublicClientRefreshTokenAuthenticationConverter()))
 						.authenticationProviders(providers -> providers
 							.add(0, new PublicClientRefreshTokenAuthenticationProvider(registeredClientRepository))))
+					// the first-party client exchanges a user's email and password for the same token
+					.tokenEndpoint(tokenEndpoint -> tokenEndpoint
+						.accessTokenRequestConverter(new PasswordGrantAuthenticationConverter())
+						.authenticationProvider(new PasswordGrantAuthenticationProvider(authenticationManager,
+							authorizationService, tokenGenerator)))
 					.clientRegistrationEndpoint(endpoint -> endpoint.authenticationProviders(providers -> providers
 						.stream()
 						.filter(OAuth2ClientRegistrationAuthenticationProvider.class::isInstance)
@@ -268,6 +306,46 @@ public class UserModuleAuthorizationServerAutoConfiguration {
 			.addFilterAfter(new ProtectedResourceMetadataFilter(protectedResources), CorsFilter.class)
 			.exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
 				new LoginUrlAuthenticationEntryPoint(properties.getLoginPath()), htmlRequestMatcher()))
+			.build();
+	}
+
+	/**
+	 * Default stateless API chain: every non-public request needs a bearer access token of this authorization server.
+	 * Consumers replace it by defining their own {@link SecurityFilterChain} bean; the module's other chains (Google
+	 * login, authorization server) are kept in that case.
+	 */
+	@ConditionalOnMissingApplicationSecurityFilterChain
+	@Bean(API_CHAIN_BEAN_NAME)
+	public SecurityFilterChain userModuleSecurityFilterChain(HttpSecurity http,
+		@Qualifier(JWT_DECODER_BEAN_NAME) JwtDecoder jwtDecoder,
+		@Qualifier(JWT_AUTHENTICATION_CONVERTER_BEAN_NAME) JwtAuthenticationConverter jwtAuthenticationConverter)
+		throws Exception {
+		AuthenticationEntryPoint unauthorized = (request, response, authException) -> {
+			response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+			response.setContentType("application/json");
+			response.getWriter().write("{\"error\": \"Unauthorized - Token is missing or invalid\"}");
+		};
+		return http
+			.csrf(AbstractHttpConfigurer::disable)
+			.authorizeHttpRequests(auth -> auth
+				.requestMatchers(HttpMethod.POST, "/user", "/user/login").permitAll()
+				.requestMatchers(HttpMethod.GET, "/user/verify").permitAll()
+				.requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+				.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+				.anyRequest().authenticated()
+			)
+			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+			.oauth2ResourceServer(resourceServer -> resourceServer
+				.jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(jwtAuthenticationConverter))
+				.authenticationEntryPoint(unauthorized))
+			.exceptionHandling(ex -> ex
+				.authenticationEntryPoint(unauthorized)
+				.accessDeniedHandler((request, response, accessDeniedException) -> {
+					response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+					response.setContentType("application/json");
+					response.getWriter().write("{\"error\": \"Access denied\"}");
+				})
+			)
 			.build();
 	}
 

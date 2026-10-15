@@ -6,6 +6,7 @@ import static com.comex.usermodule.authorizationserver.UserModuleAuthorizationSe
 import static com.comex.usermodule.authorizationserver.UserModuleAuthorizationServerAutoConfiguration.JWT_DECODER_BEAN_NAME;
 import static com.comex.usermodule.core.helper.UserTestInventory.DEFAULT_EMAIL;
 import static com.comex.usermodule.core.helper.UserTestInventory.DEFAULT_OAUTH2_NAME;
+import static com.comex.usermodule.core.helper.UserTestInventory.DEFAULT_PASSWORD;
 import static com.comex.usermodule.core.helper.UserTestInventory.verifiedUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,6 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
@@ -45,7 +47,11 @@ import org.springframework.boot.security.oauth2.server.authorization.autoconfigu
 import org.springframework.boot.security.oauth2.server.authorization.autoconfigure.servlet.OAuth2AuthorizationServerJwtAutoConfiguration;
 import org.springframework.boot.test.context.assertj.AssertableWebApplicationContext;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.security.core.GrantedAuthority;
@@ -54,7 +60,11 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
@@ -80,6 +90,8 @@ import com.comex.usermodule.configuration.OAuth2GoogleConfiguration;
 import com.comex.usermodule.configuration.SecurityConfiguration;
 import com.comex.usermodule.configuration.UserConfiguration;
 import com.comex.usermodule.configuration.UserProperties;
+import com.comex.usermodule.core.domain.User;
+import com.comex.usermodule.core.port.AccessTokenIssuer;
 import com.comex.usermodule.core.port.UserRepository;
 import com.jayway.jsonpath.JsonPath;
 
@@ -87,6 +99,9 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 
 	private static final String ISSUER = "http://localhost";
 	private static final String MCP_RESOURCE = ISSUER + "/mcp";
+	private static final String API_RESOURCE = ISSUER + "/api";
+	private static final String FIRST_PARTY_CLIENT_ID = "test-frontend";
+	private static final String API_CHAIN = UserModuleAuthorizationServerAutoConfiguration.API_CHAIN_BEAN_NAME;
 	private static final String CLAUDE_CODE_CALLBACK = "http://localhost:3118/callback";
 	private static final String CLAUDE_AI_CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 	private static final String CODE_VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
@@ -94,32 +109,34 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 
 	private final UserRepository userRepository = mock(UserRepository.class);
 
-	private final WebApplicationContextRunner sut = runner(true);
+	private final WebApplicationContextRunner sut = runner();
 
 	@BeforeEach
 	void setUp() {
-		when(userRepository.findByEmailOptional(DEFAULT_EMAIL)).thenReturn(Optional.of(verifiedUser()));
+		User user = verifiedUser();
+		user.setPassword(new BCryptPasswordEncoder().encode(DEFAULT_PASSWORD));
+		when(userRepository.findByEmailOptional(DEFAULT_EMAIL)).thenReturn(Optional.of(user));
+		when(userRepository.findByEmail(DEFAULT_EMAIL)).thenReturn(user);
 	}
 
 	@Test
-	void testDisabledByDefault() {
+	void testIssuerIsRequired() {
 		// GIVEN
-		WebApplicationContextRunner runner = runner(false);
+		WebApplicationContextRunner runner = sut.withPropertyValues("user.oauth2.authorization-server.issuer=");
 
 		// WHEN
 		runner.run(context -> {
 			// THEN
-			assertThat(context).doesNotHaveBean(AUTHORIZATION_SERVER_CHAIN_BEAN_NAME);
-			assertThat(context).doesNotHaveBean(ProtectedResources.class);
-			assertThat(context).doesNotHaveBean(JWT_DECODER_BEAN_NAME);
-			assertThat(context).hasBean(SecurityConfiguration.API_CHAIN_BEAN_NAME);
+			assertThat(context).hasFailed();
+			assertThat(context.getStartupFailure()).hasRootCauseMessage(
+				AuthorizationServerProperties.PREFIX + ".issuer must be set");
 		});
 	}
 
 	@Test
 	void testRegistersChainsAndResourceSupportBeans() {
 		// GIVEN
-		// enabled runner
+		// default runner
 
 		// WHEN
 		sut.run(context -> {
@@ -127,7 +144,7 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 			assertThat(context).getBeans(SecurityFilterChain.class).containsOnlyKeys(
 				AUTHORIZATION_SERVER_CHAIN_BEAN_NAME,
 				OAuth2GoogleConfiguration.GOOGLE_LOGIN_CHAIN_BEAN_NAME,
-				SecurityConfiguration.API_CHAIN_BEAN_NAME);
+				API_CHAIN);
 			// exactly one decoder, so an application's oauth2ResourceServer().jwt() picks it up unambiguously
 			assertThat(context).hasSingleBean(JwtDecoder.class);
 			assertThat(context).hasBean(JWT_DECODER_BEAN_NAME);
@@ -135,14 +152,14 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 			assertThat(context).getBean(BEARER_ENTRY_POINT_BEAN_NAME).isInstanceOf(BearerResourceMetadataEntryPoint.class);
 			ProtectedResources resources = context.getBean(ProtectedResources.class);
 			assertThat(resources.issuer()).isEqualTo(ISSUER);
-			assertThat(resources.resourceUris()).containsExactly(MCP_RESOURCE);
+			assertThat(resources.resourceUris()).containsExactly(MCP_RESOURCE, API_RESOURCE);
 		});
 	}
 
 	@Test
 	void testAuthorizationServerMetadata() {
 		// GIVEN
-		// enabled runner
+		// default runner
 
 		// WHEN
 		sut.run(context -> {
@@ -162,7 +179,7 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 	@Test
 	void testProtectedResourceMetadata() {
 		// GIVEN
-		// enabled runner with resource /mcp
+		// resources /mcp (the default) and /api
 
 		// WHEN
 		sut.run(context -> {
@@ -236,7 +253,7 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 	@Test
 	void testAuthorizeRedirectsToGoogleLoginWhenNotAuthenticated() {
 		// GIVEN
-		// enabled runner, no session
+		// no session
 
 		// WHEN
 		sut.run(context -> {
@@ -252,7 +269,7 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 	}
 
 	@Test
-	void testAuthorizationCodeFlowIssuesAudienceBoundTokens() {
+	void testAuthorizationCodeFlowIssuesTokensForEveryResource() {
 		// GIVEN
 		// a Google-authenticated user whose module account has roles
 
@@ -269,7 +286,7 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 			Jwt jwt = context.getBean(JWT_DECODER_BEAN_NAME, JwtDecoder.class).decode((String) tokens.get("access_token"));
 			assertThat(jwt.getSubject()).isEqualTo(DEFAULT_EMAIL);
 			assertThat(jwt.getIssuer().toString()).isEqualTo(ISSUER);
-			assertThat(jwt.getAudience()).containsExactly(MCP_RESOURCE);
+			assertThat(jwt.getAudience()).containsExactly(MCP_RESOURCE, API_RESOURCE);
 			assertThat(jwt.getClaimAsString("email")).isEqualTo(DEFAULT_EMAIL);
 			assertThat(jwt.getClaimAsString("name")).isEqualTo(DEFAULT_OAUTH2_NAME);
 			assertThat(jwt.getClaimAsString(UserModuleAccessTokenCustomizer.ROLES_CLAIM))
@@ -288,7 +305,7 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 			Jwt refreshedJwt = context.getBean(JWT_DECODER_BEAN_NAME, JwtDecoder.class)
 				.decode((String) refreshed.get("access_token"));
 			assertThat(refreshedJwt.getSubject()).isEqualTo(DEFAULT_EMAIL);
-			assertThat(refreshedJwt.getAudience()).containsExactly(MCP_RESOURCE);
+			assertThat(refreshedJwt.getAudience()).containsExactly(MCP_RESOURCE, API_RESOURCE);
 		});
 	}
 
@@ -310,8 +327,9 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 	}
 
 	@Test
-	void testJwtDecoderRejectsTokenIssuedForAnotherResource() {
+	void testResourceParameterDoesNotNarrowTheAudience() {
 		// GIVEN
+		// a client asking for a single (even unknown) resource still gets a token for every configured resource
 		String otherResource = ISSUER + "/other";
 
 		// WHEN
@@ -323,8 +341,167 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 				.get("access_token");
 
 			// THEN
+			Jwt jwt = context.getBean(JWT_DECODER_BEAN_NAME, JwtDecoder.class).decode(accessToken);
+			assertThat(jwt.getAudience()).containsExactly(MCP_RESOURCE, API_RESOURCE);
+		});
+	}
+
+	@Test
+	void testJwtDecoderRejectsTokenForAnotherAudience() {
+		// GIVEN
+		// signed with the server's own key, but for a resource this server does not protect
+
+		// WHEN
+		sut.run(context -> {
+			JwtEncoder encoder = context.getBean(JwtEncoder.class);
+			JwtClaimsSet claims = JwtClaimsSet.builder()
+				.issuer(ISSUER)
+				.subject(DEFAULT_EMAIL)
+				.audience(List.of(ISSUER + "/other"))
+				.issuedAt(Instant.now())
+				.expiresAt(Instant.now().plusSeconds(60))
+				.build();
+			String token = encoder.encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.RS256).build(),
+				claims)).getTokenValue();
+
+			// THEN
 			JwtDecoder decoder = context.getBean(JWT_DECODER_BEAN_NAME, JwtDecoder.class);
-			assertThatThrownBy(() -> decoder.decode(accessToken)).isInstanceOf(JwtValidationException.class);
+			assertThatThrownBy(() -> decoder.decode(token)).isInstanceOf(JwtValidationException.class);
+		});
+	}
+
+	@Test
+	void testLoginTokenIsAcceptedLikeAnyOtherToken() {
+		// GIVEN
+		// POST /user/login and the Google login redirect hand out tokens from the AccessTokenIssuer
+
+		// WHEN
+		sut.run(context -> {
+			String token = context.getBean(AccessTokenIssuer.class).issue(verifiedUser());
+
+			// THEN
+			Jwt jwt = context.getBean(JWT_DECODER_BEAN_NAME, JwtDecoder.class).decode(token);
+			assertThat(jwt.getHeaders()).containsEntry("alg", "RS256");
+			assertThat(jwt.getIssuer().toString()).isEqualTo(ISSUER);
+			assertThat(jwt.getSubject()).isEqualTo(DEFAULT_EMAIL);
+			assertThat(jwt.getAudience()).containsExactly(MCP_RESOURCE, API_RESOURCE);
+			assertThat(jwt.getClaimAsString(UserModuleAccessTokenCustomizer.ROLES_CLAIM).split(","))
+				.containsExactlyInAnyOrderElementsOf(verifiedUser().getAuthorities());
+		});
+	}
+
+	@Test
+	void testPasswordGrantIssuesTokensForEveryResource() {
+		// GIVEN
+		// the first-party client exchanges the user's email and password
+
+		// WHEN
+		sut.run(context -> {
+			MockMvc mockMvc = mockMvc(context);
+			Map<String, Object> tokens = passwordGrant(mockMvc, FIRST_PARTY_CLIENT_ID, DEFAULT_PASSWORD, 200);
+
+			// THEN
+			assertThat(tokens).containsEntry("token_type", "Bearer").containsKeys("access_token", "refresh_token",
+				"expires_in");
+			JwtDecoder decoder = context.getBean(JWT_DECODER_BEAN_NAME, JwtDecoder.class);
+			Jwt jwt = decoder.decode((String) tokens.get("access_token"));
+			assertThat(jwt.getSubject()).isEqualTo(DEFAULT_EMAIL);
+			assertThat(jwt.getAudience()).containsExactly(MCP_RESOURCE, API_RESOURCE);
+			assertThat(jwt.getClaimAsString(UserModuleAccessTokenCustomizer.ROLES_CLAIM))
+				.isEqualTo(String.join(",", verifiedUser().getAuthorities()));
+
+			// the refresh token works for the first-party client too, and is rotated
+			Map<String, Object> refreshed = refresh(mockMvc, FIRST_PARTY_CLIENT_ID,
+				(String) tokens.get("refresh_token"), MCP_RESOURCE);
+			assertThat(refreshed.get("refresh_token")).isNotNull().isNotEqualTo(tokens.get("refresh_token"));
+			assertThat(decoder.decode((String) refreshed.get("access_token")).getSubject()).isEqualTo(DEFAULT_EMAIL);
+		});
+	}
+
+	@Test
+	void testPasswordGrantRejectsWrongPassword() {
+		// GIVEN
+		// a wrong password for an existing user
+
+		// WHEN
+		sut.run(context -> {
+			Map<String, Object> error = passwordGrant(mockMvc(context), FIRST_PARTY_CLIENT_ID, "wrong-password", 400);
+
+			// THEN
+			assertThat(error).containsEntry("error", "invalid_grant");
+		});
+	}
+
+	@Test
+	void testPasswordGrantRefusedToDynamicallyRegisteredClients() {
+		// GIVEN
+		// MCP clients register for the authorization code flow only
+
+		// WHEN
+		sut.run(context -> {
+			MockMvc mockMvc = mockMvc(context);
+			String clientId = registerClient(mockMvc, CLAUDE_CODE_CALLBACK);
+			Map<String, Object> error = passwordGrant(mockMvc, clientId, DEFAULT_PASSWORD, 400);
+
+			// THEN
+			assertThat(error).containsEntry("error", "unauthorized_client");
+		});
+	}
+
+	@Test
+	void testNoFirstPartyClientWithoutClientId() {
+		// GIVEN
+		WebApplicationContextRunner runner = sut
+			.withPropertyValues("user.oauth2.authorization-server.first-party-client-id=");
+
+		// WHEN
+		runner.run(context -> {
+			// THEN
+			assertThat(context.getBean(RegisteredClientRepository.class).findByClientId(FIRST_PARTY_CLIENT_ID))
+				.isNull();
+		});
+	}
+
+	@Test
+	void testDefaultApiChainAcceptsTheServerTokens() {
+		// GIVEN
+		// no application chain, so the module's default API chain protects everything else
+
+		// WHEN
+		sut.run(context -> {
+			MockMvc mockMvc = mockMvc(context);
+			String token = context.getBean(AccessTokenIssuer.class).issue(verifiedUser());
+
+			// THEN
+			// public endpoints pass security (404 because no controller is registered in this slice)
+			mockMvc.perform(post("/user")).andExpect(status().isNotFound());
+			mockMvc.perform(post("/user/login")).andExpect(status().isNotFound());
+			mockMvc.perform(get("/user/verify").param("code", "x")).andExpect(status().isNotFound());
+			// a protected endpoint without a token, or with a forged one, gets the JSON 401
+			mockMvc.perform(get("/user").param("email", "a@b.c"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.error").value("Unauthorized - Token is missing or invalid"));
+			mockMvc.perform(get("/user").param("email", "a@b.c").header("Authorization", "Bearer forged"))
+				.andExpect(status().isUnauthorized());
+			// with a token it passes security
+			mockMvc.perform(get("/user").param("email", "a@b.c").header("Authorization", "Bearer " + token))
+				.andExpect(status().isNotFound());
+		});
+	}
+
+	@Test
+	void testDefaultApiChainBacksOffWhenApplicationDefinesItsOwn() {
+		// GIVEN
+		WebApplicationContextRunner runner = sut.withUserConfiguration(CustomSecurityFilterChainConfiguration.class);
+
+		// WHEN
+		runner.run(context -> {
+			// THEN
+			assertThat(context).doesNotHaveBean(API_CHAIN);
+			assertThat(context).getBeans(SecurityFilterChain.class).containsOnlyKeys(
+				AUTHORIZATION_SERVER_CHAIN_BEAN_NAME,
+				OAuth2GoogleConfiguration.GOOGLE_LOGIN_CHAIN_BEAN_NAME,
+				"customSecurityFilterChain");
 		});
 	}
 
@@ -356,6 +533,14 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 					.isInstanceOf(JdbcOAuth2AuthorizationService.class);
 				assertThat(context.getBean(OAuth2AuthorizationConsentService.class))
 					.isInstanceOf(JdbcOAuth2AuthorizationConsentService.class);
+				// the first-party client is stored, and an authorization round-trips through the JSON columns
+				MockMvc mockMvc = mockMvc(context);
+				Map<String, Object> tokens = passwordGrant(mockMvc, FIRST_PARTY_CLIENT_ID, DEFAULT_PASSWORD, 200);
+				Map<String, Object> refreshed = refresh(mockMvc, FIRST_PARTY_CLIENT_ID,
+					(String) tokens.get("refresh_token"), MCP_RESOURCE);
+				assertThat(context.getBean(JWT_DECODER_BEAN_NAME, JwtDecoder.class)
+					.decode((String) refreshed.get("access_token")).getAudience())
+					.containsExactly(MCP_RESOURCE, API_RESOURCE);
 			});
 		}
 	}
@@ -363,7 +548,7 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 	@Test
 	void testFallsBackToInMemoryPersistenceWithoutJdbc() {
 		// GIVEN
-		// enabled runner, no DataSource
+		// no DataSource
 
 		// WHEN
 		sut.run(context -> {
@@ -378,8 +563,8 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 		});
 	}
 
-	private WebApplicationContextRunner runner(boolean enabled) {
-		WebApplicationContextRunner runner = new WebApplicationContextRunner()
+	private WebApplicationContextRunner runner() {
+		return new WebApplicationContextRunner()
 			.withConfiguration(AutoConfigurations.of(
 				ServletWebSecurityAutoConfiguration.class,
 				OAuth2ClientAutoConfiguration.class,
@@ -396,8 +581,8 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 				"spring.security.oauth2.client.registration.google.client-id=test-client-id",
 				"spring.security.oauth2.client.registration.google.client-secret=test-client-secret",
 				"user.oauth2.authorization-server.issuer=" + ISSUER,
-				"user.oauth2.authorization-server.resources=/mcp");
-		return enabled ? runner.withPropertyValues("user.oauth2.authorization-server.enabled=true") : runner;
+				"user.oauth2.authorization-server.resources=/mcp,/api",
+				"user.oauth2.authorization-server.first-party-client-id=" + FIRST_PARTY_CLIENT_ID);
 	}
 
 	private static MockMvc mockMvc(AssertableWebApplicationContext context) {
@@ -484,6 +669,21 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 		return (Map<String, Object>) JsonPath.read(result.getResponse().getContentAsString(), "$");
 	}
 
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> passwordGrant(MockMvc mockMvc, String clientId, String password,
+		int expectedStatus) throws Exception {
+		MvcResult result = mockMvc.perform(post("/oauth2/token")
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("grant_type", "password")
+				.param("username", DEFAULT_EMAIL)
+				.param("password", password)
+				.param("client_id", clientId))
+			.andReturn();
+		String body = result.getResponse().getContentAsString();
+		assertThat(result.getResponse().getStatus()).as("token response: %s", body).isEqualTo(expectedStatus);
+		return (Map<String, Object>) JsonPath.read(body, "$");
+	}
+
 	private static String codeChallenge() {
 		try {
 			byte[] digest = MessageDigest.getInstance("SHA-256").digest(CODE_VERIFIER.getBytes(StandardCharsets.US_ASCII));
@@ -507,5 +707,14 @@ class UserModuleAuthorizationServerAutoConfigurationTest {
 	@Configuration(proxyBeanMethods = false)
 	@EnableConfigurationProperties(UserProperties.class)
 	static class PropertiesConfiguration {
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	static class CustomSecurityFilterChainConfiguration {
+
+		@Bean
+		SecurityFilterChain customSecurityFilterChain(HttpSecurity http) throws Exception {
+			return http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll()).build();
+		}
 	}
 }

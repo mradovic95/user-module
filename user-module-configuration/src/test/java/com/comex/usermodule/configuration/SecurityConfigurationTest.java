@@ -4,8 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
@@ -24,15 +22,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import com.comex.usermodule.core.port.AccessTokenIssuer;
+import com.comex.usermodule.core.port.UserAuthenticator;
 import com.comex.usermodule.core.port.UserRepository;
 import com.comex.usermodule.security.OAuth2LoginSuccessHandler;
-import com.comex.usermodule.security.jwt.JwtAuthFilter;
 
 class SecurityConfigurationTest {
 
 	private static final String GOOGLE_CLIENT_ID = "spring.security.oauth2.client.registration.google.client-id=test-client-id";
 	private static final String GOOGLE_CLIENT_SECRET = "spring.security.oauth2.client.registration.google.client-secret=test-client-secret";
-	private static final String API_CHAIN = SecurityConfiguration.API_CHAIN_BEAN_NAME;
 	private static final String GOOGLE_CHAIN = OAuth2GoogleConfiguration.GOOGLE_LOGIN_CHAIN_BEAN_NAME;
 
 	private final WebApplicationContextRunner sut = new WebApplicationContextRunner()
@@ -44,27 +42,26 @@ class SecurityConfigurationTest {
 			SecurityConfiguration.class,
 			OAuth2GoogleConfiguration.class))
 		.withUserConfiguration(PropertiesConfiguration.class)
-		.withBean(UserRepository.class, () -> mock(UserRepository.class));
+		.withBean(UserRepository.class, () -> mock(UserRepository.class))
+		// the authorization server provides it in an application; the default API chain is tested there too
+		.withBean(AccessTokenIssuer.class, () -> mock(AccessTokenIssuer.class));
 
 	@Test
-	void testFilterChainWithoutOAuth2ClientRegistration() {
+	void testNoGoogleLoginChainWithoutOAuth2ClientRegistration() {
 		// GIVEN
 		// no spring.security.oauth2.client.* properties
 
 		// WHEN
 		sut.run(context -> {
 			// THEN
-			assertThat(context).hasSingleBean(SecurityFilterChain.class);
-			assertThat(context).hasBean(API_CHAIN);
 			assertThat(context).doesNotHaveBean(GOOGLE_CHAIN);
-			SecurityFilterChain chain = context.getBean(SecurityFilterChain.class);
-			assertThat(chain.getFilters()).anyMatch(JwtAuthFilter.class::isInstance);
-			assertThat(chain.getFilters()).noneMatch(OAuth2LoginAuthenticationFilter.class::isInstance);
+			assertThat(context).hasSingleBean(UserAuthenticator.class);
+			assertThat(context).hasSingleBean(OAuth2LoginSuccessHandler.class);
 		});
 	}
 
 	@Test
-	void testFilterChainWithOAuth2ClientRegistration() {
+	void testGoogleLoginChainWithOAuth2ClientRegistration() {
 		// GIVEN
 		WebApplicationContextRunner runner = sut.withPropertyValues(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
 			"user.oauth2.success-redirect-url=https://app.example.com/callback",
@@ -73,33 +70,13 @@ class SecurityConfigurationTest {
 		// WHEN
 		runner.run(context -> {
 			// THEN
-			assertThat(context).getBeans(SecurityFilterChain.class).containsOnlyKeys(API_CHAIN, GOOGLE_CHAIN);
+			assertThat(context).hasBean(GOOGLE_CHAIN);
 			assertThat(context).hasSingleBean(OAuth2LoginSuccessHandler.class);
 			UserProperties.OAuth2Properties oauth2 = context.getBean(UserProperties.class).getOauth2();
 			assertThat(oauth2.getSuccessRedirectUrl()).isEqualTo("https://app.example.com/callback");
 			assertThat(oauth2.getAllowedDomains()).containsExactly("comex.com", "leanpay.com");
-			SecurityFilterChain apiChain = context.getBean(API_CHAIN, SecurityFilterChain.class);
-			assertThat(apiChain.getFilters()).anyMatch(JwtAuthFilter.class::isInstance);
-			assertThat(apiChain.getFilters()).noneMatch(OAuth2LoginAuthenticationFilter.class::isInstance);
 			SecurityFilterChain googleChain = context.getBean(GOOGLE_CHAIN, SecurityFilterChain.class);
 			assertThat(googleChain.getFilters()).anyMatch(OAuth2LoginAuthenticationFilter.class::isInstance);
-			assertThat(googleChain.getFilters()).noneMatch(JwtAuthFilter.class::isInstance);
-		});
-	}
-
-	@Test
-	void testApiChainBacksOffWhenApplicationDefinesItsOwn() {
-		// GIVEN
-		WebApplicationContextRunner runner = sut.withUserConfiguration(CustomSecurityFilterChainConfiguration.class);
-
-		// WHEN
-		runner.run(context -> {
-			// THEN
-			assertThat(context).hasSingleBean(SecurityFilterChain.class);
-			assertThat(context).hasBean("customSecurityFilterChain");
-			assertThat(context).doesNotHaveBean(API_CHAIN);
-			assertThat(context.getBean(SecurityFilterChain.class).getFilters())
-				.noneMatch(JwtAuthFilter.class::isInstance);
 		});
 	}
 
@@ -115,7 +92,6 @@ class SecurityConfigurationTest {
 			// THEN
 			assertThat(context).getBeans(SecurityFilterChain.class)
 				.containsOnlyKeys("customSecurityFilterChain", GOOGLE_CHAIN);
-			assertThat(context).doesNotHaveBean(API_CHAIN);
 			MockMvc mockMvc = MockMvcBuilders.webAppContextSetup((WebApplicationContext) context)
 				.apply(springSecurity())
 				.build();
@@ -123,34 +99,6 @@ class SecurityConfigurationTest {
 				.andExpect(status().is3xxRedirection())
 				.andExpect(result -> assertThat(result.getResponse().getRedirectedUrl())
 					.startsWith("https://accounts.google.com/o/oauth2/v2/auth"));
-		});
-	}
-
-	@Test
-	void testPublicAndProtectedEndpoints() {
-		// GIVEN
-		WebApplicationContextRunner runner = sut.withPropertyValues(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
-
-		// WHEN
-		runner.run(context -> {
-			MockMvc mockMvc = MockMvcBuilders.webAppContextSetup((WebApplicationContext) context)
-				.apply(springSecurity())
-				.build();
-
-			// THEN
-			// public endpoints pass security (404 because no controller is registered in this slice)
-			mockMvc.perform(post("/user")).andExpect(status().isNotFound());
-			mockMvc.perform(post("/user/login")).andExpect(status().isNotFound());
-			mockMvc.perform(get("/user/verify").param("code", "x")).andExpect(status().isNotFound());
-			// OAuth2 entry point redirects to Google
-			mockMvc.perform(get("/oauth2/authorization/google"))
-				.andExpect(status().is3xxRedirection())
-				.andExpect(result -> assertThat(result.getResponse().getRedirectedUrl())
-					.startsWith("https://accounts.google.com/o/oauth2/v2/auth"));
-			// protected endpoint without a token gets the JSON 401
-			mockMvc.perform(get("/user").param("email", "a@b.c"))
-				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.error").value("Unauthorized - Token is missing or invalid"));
 		});
 	}
 

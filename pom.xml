@@ -11,7 +11,7 @@
 
 	<groupId>com.comex</groupId>
 	<artifactId>user-module</artifactId>
-	<version>0.0.9-SNAPSHOT</version>
+	<version>0.0.10-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>user-module</name>
 	<description>User Module - Multi-module authentication and user management</description>
@@ -30,7 +30,6 @@
 	<properties>
 		<java.version>25</java.version>
 		<org.springdoc.springdoc-openapi-starter-webmvc-ui.version>3.1.1</org.springdoc.springdoc-openapi-starter-webmvc-ui.version>
-		<io.jsonwebtoken.version>0.13.0</io.jsonwebtoken.version>
 		<software.amazon.awssdk.version>2.30.2</software.amazon.awssdk.version>
 		<!-- Spring AI community MCP security (0.1.x targets the Spring AI 2.0 / Spring Boot 4 line) -->
 		<org.springaicommunity.mcp-security.version>0.1.14</org.springaicommunity.mcp-security.version>
@@ -86,23 +85,6 @@
 				<groupId>org.springaicommunity</groupId>
 				<artifactId>mcp-authorization-server</artifactId>
 				<version>${org.springaicommunity.mcp-security.version}</version>
-			</dependency>
-
-			<!-- JWT -->
-			<dependency>
-				<groupId>io.jsonwebtoken</groupId>
-				<artifactId>jjwt-api</artifactId>
-				<version>${io.jsonwebtoken.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>io.jsonwebtoken</groupId>
-				<artifactId>jjwt-impl</artifactId>
-				<version>${io.jsonwebtoken.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>io.jsonwebtoken</groupId>
-				<artifactId>jjwt-jackson</artifactId>
-				<version>${io.jsonwebtoken.version}</version>
 			</dependency>
 
 			<!-- AWS SDK -->

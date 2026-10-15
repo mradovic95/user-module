@@ -28,7 +28,7 @@ import com.comex.usermodule.core.domain.User;
 import com.comex.usermodule.core.dto.LoginUserOAuth2Dto;
 import com.comex.usermodule.core.exception.UserException;
 import com.comex.usermodule.core.exception.UserExceptionKey;
-import com.comex.usermodule.core.service.JwtService;
+import com.comex.usermodule.core.port.AccessTokenIssuer;
 import com.comex.usermodule.core.service.UserService;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,14 +40,14 @@ class UserGoogleSpringAuthenticatorTest {
 	private UserService userService;
 
 	@Mock
-	private JwtService jwtService;
+	private AccessTokenIssuer accessTokenIssuer;
 
 	private UserGoogleSpringAuthenticator sut;
 
 	@BeforeEach
 	void setUp() {
 		// empty allowed-domains list: every Google account is accepted
-		sut = new UserGoogleSpringAuthenticator(userService, jwtService, List.of());
+		sut = new UserGoogleSpringAuthenticator(userService, accessTokenIssuer, List.of());
 	}
 
 	@Test
@@ -57,7 +57,7 @@ class UserGoogleSpringAuthenticatorTest {
 		User existingUser = verifiedUser();
 
 		when(userService.findByEmailOptional(DEFAULT_EMAIL)).thenReturn(Optional.of(existingUser));
-		when(jwtService.generateToken(existingUser)).thenReturn(TOKEN);
+		when(accessTokenIssuer.issue(existingUser)).thenReturn(TOKEN);
 
 		// WHEN
 		String result = sut.authenticate(loginUserOAuth2Dto);
@@ -75,7 +75,7 @@ class UserGoogleSpringAuthenticatorTest {
 
 		when(userService.findByEmailOptional(DEFAULT_EMAIL)).thenReturn(Optional.empty());
 		when(userService.createOAuth2User(loginUserOAuth2Dto)).thenReturn(newUser);
-		when(jwtService.generateToken(newUser)).thenReturn(TOKEN);
+		when(accessTokenIssuer.issue(newUser)).thenReturn(TOKEN);
 
 		// WHEN
 		String result = sut.authenticate(loginUserOAuth2Dto);
@@ -89,12 +89,12 @@ class UserGoogleSpringAuthenticatorTest {
 	@MethodSource("provideDomainPolicyScenarios")
 	void testAuthenticateDomainPolicy(String email, List<String> allowedDomains, boolean allowed) {
 		// GIVEN
-		sut = new UserGoogleSpringAuthenticator(userService, jwtService, allowedDomains);
+		sut = new UserGoogleSpringAuthenticator(userService, accessTokenIssuer, allowedDomains);
 		LoginUserOAuth2Dto loginUserOAuth2Dto = loginUserOAuth2Dto(email, DEFAULT_OAUTH2_NAME);
 		if (allowed) {
 			User user = verifiedUser();
 			when(userService.findByEmailOptional(email)).thenReturn(Optional.of(user));
-			when(jwtService.generateToken(user)).thenReturn(TOKEN);
+			when(accessTokenIssuer.issue(user)).thenReturn(TOKEN);
 		}
 
 		// WHEN / THEN
@@ -105,7 +105,7 @@ class UserGoogleSpringAuthenticatorTest {
 				.isInstanceOf(UserException.class)
 				.extracting("errorKey")
 				.isEqualTo(UserExceptionKey.OAUTH2_EMAIL_DOMAIN_NOT_ALLOWED);
-			verifyNoInteractions(userService, jwtService);
+			verifyNoInteractions(userService, accessTokenIssuer);
 		}
 	}
 

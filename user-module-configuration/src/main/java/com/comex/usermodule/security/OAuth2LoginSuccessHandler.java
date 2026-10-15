@@ -26,11 +26,11 @@ import lombok.extern.slf4j.Slf4j;
  * Completes an OAuth2 login: validates the provider identity, provisions the user and hands control back.
  * <p>
  * Saved request (the user was sent to Google by another chain, e.g. the authorization server's
- * {@code /oauth2/authorize}): the browser is redirected back to that request and no module JWT is issued; the
+ * {@code /oauth2/authorize}): the browser is redirected back to that request and no token is issued; the
  * session now carries the authenticated user.
  * <p>
- * Otherwise a module JWT is issued: when a success redirect URL is configured the browser is redirected there with
- * the JWT as a {@code token} query parameter; otherwise the JWT is written to the response body as JSON.
+ * Otherwise an access token is issued: when a success redirect URL is configured the browser is redirected there with
+ * the token as a {@code token} query parameter; otherwise the token is written to the response body as JSON.
  * <p>
  * Rejection (missing email, unverified email, email domain not allowed): with a redirect URL configured the
  * browser is redirected there with an {@code error} query parameter; otherwise a JSON error body is written with
@@ -79,9 +79,9 @@ public class OAuth2LoginSuccessHandler extends SavedRequestAwareAuthenticationSu
 			return;
 		}
 
-		String jwt;
+		String token;
 		try {
-			jwt = userGoogleAuthenticator.authenticate(new LoginUserOAuth2Dto(email, oAuth2User.getAttribute("name")));
+			token = userGoogleAuthenticator.authenticate(new LoginUserOAuth2Dto(email, oAuth2User.getAttribute("name")));
 		} catch (UserException e) {
 			if (e.getErrorKey() != OAUTH2_EMAIL_DOMAIN_NOT_ALLOWED) {
 				throw e;
@@ -99,11 +99,11 @@ public class OAuth2LoginSuccessHandler extends SavedRequestAwareAuthenticationSu
 		log.debug("OAuth2 login completed for {}.", email);
 
 		if (StringUtils.hasText(successRedirectUrl)) {
-			getRedirectStrategy().sendRedirect(request, response, redirectUrl(TOKEN_PARAMETER, jwt));
+			getRedirectStrategy().sendRedirect(request, response, redirectUrl(TOKEN_PARAMETER, token));
 			return;
 		}
 
-		writeJson(response, "{\"token\": \"" + jwt + "\"}");
+		writeJson(response, "{\"token\": \"" + token + "\"}");
 	}
 
 	private void reject(HttpServletRequest request, HttpServletResponse response, int status, String code,

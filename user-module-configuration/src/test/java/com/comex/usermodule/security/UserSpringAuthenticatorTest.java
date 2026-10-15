@@ -23,18 +23,18 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 
-import com.comex.usermodule.core.service.JwtService;
+import com.comex.usermodule.core.port.AccessTokenIssuer;
 
 @ExtendWith(MockitoExtension.class)
 class UserSpringAuthenticatorTest {
 
-	private static final String TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xyz";
+	private static final String TOKEN = "eyJhbGciOiJSUzI1NiJ9.xyz";
 
 	@Mock
 	private AuthenticationManager authenticationManager;
 
 	@Mock
-	private JwtService jwtService;
+	private AccessTokenIssuer accessTokenIssuer;
 
 	@Captor
 	private ArgumentCaptor<com.comex.usermodule.core.domain.User> userCaptor;
@@ -43,7 +43,7 @@ class UserSpringAuthenticatorTest {
 
 	@BeforeEach
 	void setUp() {
-		sut = new UserSpringAuthenticator(authenticationManager, jwtService);
+		sut = new UserSpringAuthenticator(authenticationManager, accessTokenIssuer);
 	}
 
 	@Test
@@ -56,7 +56,7 @@ class UserSpringAuthenticatorTest {
 
 		when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
 			.thenReturn(authenticated);
-		when(jwtService.generateToken(any())).thenReturn(TOKEN);
+		when(accessTokenIssuer.issue(any())).thenReturn(TOKEN);
 
 		// WHEN
 		String result = sut.authenticate(loginUserDto());
@@ -65,7 +65,7 @@ class UserSpringAuthenticatorTest {
 		assertThat(result).isEqualTo(TOKEN);
 		verify(authenticationManager).authenticate(argThat(auth ->
 			DEFAULT_EMAIL.equals(auth.getPrincipal()) && DEFAULT_PASSWORD.equals(auth.getCredentials())));
-		verify(jwtService).generateToken(userCaptor.capture());
+		verify(accessTokenIssuer).issue(userCaptor.capture());
 		assertThat(userCaptor.getValue().getEmail()).isEqualTo(DEFAULT_EMAIL);
 		assertThat(userCaptor.getValue().getAuthorities()).containsExactlyInAnyOrder("ROLE_USER", "ROLE_ADMIN");
 	}
